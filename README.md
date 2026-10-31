@@ -4,13 +4,14 @@ Attention: This repository uses Git LFS!
 
 Files found here come from official Swift releases from Swift.org. They are downloaded and extracted using the `build.sh` script before committing.
 
-The runtime libraries (`libswiftCore`, `libswift_Concurrency`, `libswift_StringProcessing`, `libswiftObservation`, ...) come from the release in `version.txt` and are universal (arm64 and x86_64) binaries.
+The runtime libraries (`libswiftCore`, `libswift_Concurrency`, `libswift_StringProcessing`, `libswiftObservation`, ...) come from the release in `version.txt` and are universal (arm64 and x86_64) binaries. Most of their arm64 slices are rebuilt from source for ARMv8.0 CPUs by `runtime/build.sh` (see `runtime/README.md`).
 
 Swift.org toolchains no longer include the Darwin SDK overlays (`libswiftAppKit`, `libswiftFoundation`, `libswiftObjectiveC`, `libswiftDispatch`, ...). The copies of those in this repository come from Swift 5.2.2 and are x86_64-only, except `libswiftDarwin`, `libswiftObjectiveC`, `libswiftCoreFoundation`, `libswiftDispatch`, `libswiftos` and `libswiftXPC`. Those six also have arm64 slices, built from the sources in `overlays/` (see `overlays/README.md`).
 
 ## License and provenance
 
-- **Runtime libraries:** unmodified binaries from `usr/lib/swift/macosx` in `swift-6.3.3-RELEASE-osx.pkg` from download.swift.org (SHA-256 `ee82e57774d6650f94aa06302435d6f44a055b9411698db8ecb85d9a3bcc91d0`). `libswiftCompatibilitySpan.dylib` is a symlink to `libswiftCore.dylib`, as in the pkg.
+- **Runtime libraries:** the x86_64 slices, and the arm64 slices of `libswiftObservation`, `libswiftDistributed`, `libswift_Differentiation` and `libswiftRuntime`, are unmodified binaries from `usr/lib/swift/macosx` in `swift-6.3.3-RELEASE-osx.pkg` from download.swift.org (SHA-256 `ee82e57774d6650f94aa06302435d6f44a055b9411698db8ecb85d9a3bcc91d0`). `libswiftCompatibilitySpan.dylib` is a symlink to `libswiftCore.dylib`, as in the pkg.
+- **Runtime libraries, arm64 slices of `libswiftCore`, `libswift_Concurrency`, `libswiftSwiftOnoneSupport`, `libswiftRemoteMirror`, `libswift_Builtin_float`, `libswift_StringProcessing`, `libswift_RegexParser`, `libswiftRegexBuilder`, `libswiftSynchronization` and `libswift_Volatile`:** built by `runtime/build.sh` from the swift-6.3.3-RELEASE sources (pinned commits there) for an ARMv8.0 baseline with outline atomics. The pkg's arm64 slices target Apple M1 and trap on ARMv8.0 CPUs (Cortex-A72, Exynos M3) with SIGILL; see `runtime/README.md`. Each carries hidden copies of compiler-rt's outline atomics helpers, `os_version_check.c` and `runtime/outline-atomics-init.c`.
 - **x86_64 overlay slices:** unmodified binaries from the Swift 5.2.2 macOS pkg.
 - **arm64 overlay slices:** built from `overlays/`.
 - **`swift_compat.S`:** written for Darling, not taken from a Swift release. `CMakeLists.txt` builds it into `libswiftCoreCompat.dylib`.

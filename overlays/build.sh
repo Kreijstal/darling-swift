@@ -10,13 +10,23 @@
 #   DARLING_LD          Darling's ld64 (build/src/external/cctools-port/cctools/ld64/src/aarch64-apple-darwin20-ld)
 #   DARLING_LIBSYSTEM   Darling's built libSystem.B.dylib
 #   DARLING_ROOT        installed Darling root (libexec/darling): libobjc and CoreFoundation are linked from it
+#   DARLING_RT_BUILTINS libdarling_rt_builtins.a from ../runtime/build.sh: compiler-rt's outline
+#                       atomics helpers (and __isPlatformVersionAtLeast), linked into every binary
 # Optional:
 #   LD_EXTRA_FLAGS      extra ld64 flags, e.g. the -dylib_file mappings Darling's own executables link with
+#   SWIFT_EXTRA_FLAGS   extra swiftc -frontend flags, e.g. -I <resource dir>/shims when SWIFT_RESOURCE_DIR
+#                       is ../runtime/build.sh's output rather than the pkg's usr/lib/swift
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/.." && pwd)
-: "${SWIFT_TOOLCHAIN:?}" "${SWIFT_RESOURCE_DIR:?}" "${DARLING_SDK:?}" "${DARLING_LD:?}" "${DARLING_LIBSYSTEM:?}" "${DARLING_ROOT:?}"
+: "${SWIFT_TOOLCHAIN:?}" "${SWIFT_RESOURCE_DIR:?}" "${DARLING_SDK:?}" "${DARLING_LD:?}" "${DARLING_LIBSYSTEM:?}" "${DARLING_ROOT:?}" "${DARLING_RT_BUILTINS:?}"
+# arm64 code is built for an ARMv8.0 baseline (apple-a7) with outline atomics, like the runtime
+# libraries (see ../runtime/README.md): -target arm64-apple-macosx alone means Apple M1, whose LSE
+# atomics and RCpc loads an ARMv8.0 core (Cortex-A72, Exynos M3) traps on. Atomics then call the
+# __aarch64_* helpers in DARLING_RT_BUILTINS, which use LSE only where the CPU has it.
+ARM64_SWIFT_CPU="-Xcc -mcpu=apple-a7 -Xcc -moutline-atomics ${SWIFT_EXTRA_FLAGS:-}"
+ARM64_C_CPU="-mcpu=apple-a7 -moutline-atomics"
 LD_EXTRA_FLAGS=${LD_EXTRA_FLAGS:-}
 out="$here/build"
 mkdir -p "$out/modules" "$out/obj"
@@ -65,7 +75,7 @@ build_module() {
 	# Library evolution, like Apple's SDK overlays, so binaries built against the macOS SDK use the same access patterns.
 	# shellcheck disable=SC2086
 	"$SWIFT_TOOLCHAIN/bin/swiftc" -frontend -c @"$out/$module.sources" \
-		-target arm64-apple-macosx26.0 -sdk "$DARLING_SDK" -resource-dir "$SWIFT_RESOURCE_DIR" \
+		-target arm64-apple-macosx26.0 -sdk "$DARLING_SDK" -resource-dir "$SWIFT_RESOURCE_DIR" $ARM64_SWIFT_CPU \
 		-module-cache-path "$out/module-cache" -swift-version 5 \
 		-module-name "$module" -module-link-name "swift$module" -autolink-force-load \
 		-enable-library-evolution -parse-as-library -O \
@@ -75,7 +85,7 @@ build_module() {
 		-o "$out/obj/$module.o" $swift_flags
 
 	# shellcheck disable=SC2086
-"$DARLING_LD" -dylib -arch arm64 -platform_version macos 26.0 26.0 -syslibroot "$DARLING_SDK" -syslibroot "$DARLING_ROOT" \
+"$DARLING_LD" -dylib -arch arm64 "$DARLING_RT_BUILTINS" -platform_version macos 26.0 26.0 -syslibroot "$DARLING_SDK" -syslibroot "$DARLING_ROOT" \
 		-install_name "/usr/lib/swift/libswift$module.dylib" \
 		-compatibility_version 1.0.0 -current_version 1.0.0 \
 		$LD_EXTRA_FLAGS \
@@ -90,9 +100,9 @@ corefoundation="$DARLING_ROOT/System/Library/Frameworks/CoreFoundation.framework
 build_module Darwin "$here"/Darwin/*.swift
 build_module ObjectiveC "$here/ObjectiveC/ObjectiveC.swift" -- -disable-objc-attr-requires-foundation-module --link -lswiftDarwin
 build_module CoreFoundation "$here"/CoreFoundation/*.swift --link "$corefoundation" -lswiftDarwin
-"$SWIFT_TOOLCHAIN/bin/clang++" -target arm64-apple-macosx26.0 -isysroot "$DARLING_SDK" -I "$here/Dispatch/include" \
+"$SWIFT_TOOLCHAIN/bin/clang++" -target arm64-apple-macosx26.0 $ARM64_C_CPU -isysroot "$DARLING_SDK" -I "$here/Dispatch/include" \
 	-std=c++17 -fobjc-arc -O2 -c "$here/Dispatch/Dispatch.mm" -o "$out/obj/Dispatch.mm.o"
-"$SWIFT_TOOLCHAIN/bin/clang" -target arm64-apple-macosx26.0 -isysroot "$DARLING_SDK" -fobjc-arc -O2 \
+"$SWIFT_TOOLCHAIN/bin/clang" -target arm64-apple-macosx26.0 $ARM64_C_CPU -isysroot "$DARLING_SDK" -fobjc-arc -O2 \
 	-c "$here/Dispatch/DarlingSerialExecutor.m" -o "$out/obj/DarlingSerialExecutor.m.o"
 build_module Dispatch "$here"/Dispatch/*.swift --link "$out/obj/Dispatch.mm.o" "$out/obj/DarlingSerialExecutor.m.o" -lswiftObjectiveC -lswiftDarwin
 build_module os "$here/os/os.swift" -- -Xcc -fmodule-map-file="$here/os/shims/module.modulemap" --link -lswiftDarwin -lswiftObjectiveC -lswiftDispatch
@@ -174,14 +184,14 @@ for p in "$here"/Combine/patches/*.patch; do
 	patch -p1 -s -d "$out/combine-src" < "$p"
 done
 
-"$SWIFT_TOOLCHAIN/bin/clang" -target arm64-apple-macosx26.0 -isysroot "$DARLING_SDK" \
+"$SWIFT_TOOLCHAIN/bin/clang" -target arm64-apple-macosx26.0 $ARM64_C_CPU -isysroot "$DARLING_SDK" \
 	-I "$opencombine_src/Sources/COpenCombineHelpers/include" -Wall -Wextra -O2 -fvisibility=hidden \
 	-c "$here/Combine/helpers.c" -o "$out/obj/CombineHelpers.o"
 
 # find order is filesystem order, so the source list goes through collect_sources' LC_ALL=C sort.
 collect_sources "$out/combine-src" "$out/Combine.sources"
 "$SWIFT_TOOLCHAIN/bin/swiftc" -frontend -c @"$out/Combine.sources" \
-	-target arm64-apple-macosx26.0 -sdk "$DARLING_SDK" -resource-dir "$SWIFT_RESOURCE_DIR" \
+	-target arm64-apple-macosx26.0 -sdk "$DARLING_SDK" -resource-dir "$SWIFT_RESOURCE_DIR" $ARM64_SWIFT_CPU \
 	-module-cache-path "$out/module-cache" -swift-version 5 \
 	-module-name Combine \
 	-enable-library-evolution -parse-as-library -O \
@@ -191,7 +201,7 @@ collect_sources "$out/combine-src" "$out/Combine.sources"
 
 mkdir -p "$repo/Combine.framework/Versions/A"
 # shellcheck disable=SC2086
-"$DARLING_LD" -dylib -arch arm64 -platform_version macos 26.0 26.0 -syslibroot "$DARLING_SDK" \
+"$DARLING_LD" -dylib -arch arm64 "$DARLING_RT_BUILTINS" -platform_version macos 26.0 26.0 -syslibroot "$DARLING_SDK" \
 	-install_name "/System/Library/Frameworks/Combine.framework/Versions/A/Combine" \
 	-compatibility_version 1.0.0 -current_version 1.0.0 \
 	$LD_EXTRA_FLAGS \
@@ -211,7 +221,7 @@ build_object() {
 	srcdir=$2
 	collect_sources "$srcdir" "$out/$module.sources"
 	"$SWIFT_TOOLCHAIN/bin/swiftc" -frontend -c @"$out/$module.sources" \
-		-target arm64-apple-macosx26.0 -sdk "$DARLING_SDK" -resource-dir "$SWIFT_RESOURCE_DIR" \
+		-target arm64-apple-macosx26.0 -sdk "$DARLING_SDK" -resource-dir "$SWIFT_RESOURCE_DIR" $ARM64_SWIFT_CPU \
 		-module-cache-path "$out/module-cache" -swift-version 5 \
 		-module-name "$module" -parse-as-library -O \
 		-I "$out/modules" \
@@ -271,7 +281,7 @@ mkdir -p "$out/obj/cmark"
 : > "$out/cmark-objects.list"
 find "$cmark_src/src" "$cmark_src/extensions" -maxdepth 1 -name '*.c' | LC_ALL=C sort | while IFS= read -r c; do
 	obj="$out/obj/cmark/$(basename "$(dirname "$c")")-$(basename "$c" .c).o"
-	"$SWIFT_TOOLCHAIN/bin/clang" -target arm64-apple-macosx26.0 -isysroot "$DARLING_SDK" -O2 \
+	"$SWIFT_TOOLCHAIN/bin/clang" -target arm64-apple-macosx26.0 $ARM64_C_CPU -isysroot "$DARLING_SDK" -O2 \
 		-fvisibility=hidden -DCMARK_GFM_STATIC_DEFINE -DNDEBUG \
 		-I "$cmark_src/src/include" -I "$cmark_src/extensions/include" -c "$c" -o "$obj"
 	printf '%s\n' "$obj" >> "$out/cmark-objects.list"
@@ -430,7 +440,7 @@ echo "updated libswiftCoreText.dylib: $(llvm-lipo -archs "$repo/libswiftCoreText
 collect_sources "$here/GroupActivities/Sources" "$out/GroupActivities.sources"
 mkdir -p "$out/modules-groupactivities"
 "$SWIFT_TOOLCHAIN/bin/swiftc" -frontend -c @"$out/GroupActivities.sources" \
-	-target arm64-apple-macosx26.0 -sdk "$DARLING_SDK" -resource-dir "$SWIFT_RESOURCE_DIR" \
+	-target arm64-apple-macosx26.0 -sdk "$DARLING_SDK" -resource-dir "$SWIFT_RESOURCE_DIR" $ARM64_SWIFT_CPU \
 	-module-cache-path "$out/module-cache" -swift-version 5 \
 	-module-name GroupActivities \
 	-enable-library-evolution -parse-as-library -O \
@@ -440,7 +450,7 @@ mkdir -p "$out/modules-groupactivities"
 
 mkdir -p "$repo/GroupActivities.framework/Versions/A"
 # shellcheck disable=SC2086
-"$DARLING_LD" -dylib -arch arm64 -platform_version macos 26.0 26.0 -syslibroot "$DARLING_SDK" \
+"$DARLING_LD" -dylib -arch arm64 "$DARLING_RT_BUILTINS" -platform_version macos 26.0 26.0 -syslibroot "$DARLING_SDK" \
 	-install_name "/System/Library/Frameworks/GroupActivities.framework/Versions/A/GroupActivities" \
 	-compatibility_version 1.0.0 -current_version 1.0.0 \
 	$LD_EXTRA_FLAGS \
@@ -500,7 +510,7 @@ mkdir -p "$out/modules-cryptokit"
 # shellcheck disable=SC2086
 "$SWIFT_TOOLCHAIN/bin/swiftc" -frontend -c $cryptokit_files \
 	"$mac_dir/HMAC/HMAC.swift" "$mac_dir/MessageAuthenticationCode.swift" "$mac_dir/MACFunctions.swift" \
-	-target arm64-apple-macosx26.0 -sdk "$DARLING_SDK" -resource-dir "$SWIFT_RESOURCE_DIR" \
+	-target arm64-apple-macosx26.0 -sdk "$DARLING_SDK" -resource-dir "$SWIFT_RESOURCE_DIR" $ARM64_SWIFT_CPU \
 	-module-cache-path "$out/module-cache" -swift-version 5 \
 	-module-name CryptoKit \
 	-D DARLING_CRYPTOKIT_MODULE -enable-experimental-feature Lifetimes \
@@ -512,7 +522,7 @@ mkdir -p "$out/modules-cryptokit"
 
 mkdir -p "$repo/CryptoKit.framework/Versions/A"
 # shellcheck disable=SC2086
-"$DARLING_LD" -dylib -arch arm64 -platform_version macos 26.0 26.0 -syslibroot "$DARLING_SDK" \
+"$DARLING_LD" -dylib -arch arm64 "$DARLING_RT_BUILTINS" -platform_version macos 26.0 26.0 -syslibroot "$DARLING_SDK" \
 	-install_name "/System/Library/Frameworks/CryptoKit.framework/Versions/A/CryptoKit" \
 	-compatibility_version 1.0.0 -current_version 1.0.0 \
 	$LD_EXTRA_FLAGS \

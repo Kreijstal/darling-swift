@@ -1,5 +1,7 @@
 # arm64 Swift SDK overlays
 
+arm64 code here is compiled for an ARMv8.0 baseline with outline atomics (`-mcpu=apple-a7 -moutline-atomics`) and linked with `DARLING_RT_BUILTINS` from `../runtime/build.sh`, like the runtime libraries; see `../runtime/README.md`. `-target arm64-apple-macosx` alone means Apple M1, whose LSE atomics an ARMv8.0 phone CPU traps on. Of the shipped slices, `Combine.framework` has been rebuilt this way; `libswiftFoundation`'s arm64 slice still has 86 inline `ldadd` (it needs the prepared `DARLING_SDK` with Clang module maps that `build.sh` describes).
+
 Swift.org toolchains stopped shipping the Darwin SDK overlays, so the copies in this repository were x86_64-only (Swift 5.2.2). `build.sh` builds arm64 slices of ten of them and merges them into the existing universal binaries. The x86_64 slices are unchanged. Four are built from the last open-source Swift sources; `os`, `XPC` and `SceneKit` were never open source, so they are written from Apple's public API documentation and the imported symbol names (no Apple code).
 Swift.org toolchains stopped shipping the Darwin SDK overlays, so the copies in this repository were x86_64-only (Swift 5.2.2). `build.sh` builds arm64 slices of ten of them and merges them into the existing universal binaries. The x86_64 slices are unchanged. Four are built from the last open-source Swift sources; `os`, `XPC` and `QuartzCore` were never open source, so they are written from Apple's public API documentation and the imported symbol names (no Apple code).
 
