@@ -1,0 +1,4 @@
+module _DarlingCoreMediaShims [system] {
+  header "DarlingCoreMediaShims.h"
+  export *
+}

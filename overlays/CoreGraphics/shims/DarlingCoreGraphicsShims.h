@@ -12,9 +12,13 @@
 
 #include <CoreGraphics/CGContext.h>
 #include <CoreGraphics/CGGeometry.h>
+#include <CoreGraphics/CGPath.h>
 
 void CGContextAddLineToPoint(CGContextRef context, CGFloat x, CGFloat y);
 void CGContextAddArc(CGContextRef context, CGFloat x, CGFloat y, CGFloat radius, CGFloat startAngle, CGFloat endAngle,
                      bool clockwise);
+// Exported by Darling's CoreGraphics, but missing from its CGPath.h.
+CGPathRef CGPathCreateCopyByDashingPath(CGPathRef path, const CGAffineTransform *transform, CGFloat phase,
+                                        const CGFloat *lengths, size_t count);
 
 #endif
