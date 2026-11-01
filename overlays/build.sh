@@ -97,62 +97,51 @@ build_module() {
 
 corefoundation="$DARLING_ROOT/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation"
 
+# merge_x86_64 MODULE...: join each arm64 slice built in "$out" with the x86_64 slice in the repository.
+merge_x86_64() {
+	for module in "$@"; do
+		dylib="libswift$module.dylib"
+		llvm-lipo -thin x86_64 "$repo/$dylib" -output "$out/$dylib.x86_64" 2>/dev/null || cp "$repo/$dylib" "$out/$dylib.x86_64"
+		llvm-lipo -create "$out/$dylib.x86_64" "$out/$dylib" -output "$repo/$dylib"
+		rm "$out/$dylib.x86_64"
+		echo "updated $dylib: $(llvm-lipo -archs "$repo/$dylib")"
+	done
+}
+
+# iOS SDK overlays whose x86_64 slices are Swift 5.2.2 builds with no arm64 slice, so dyld refused to
+# load an arm64 app that links them. The frameworks behind them are stubs in Darling, so the 5.2.2
+# sources cannot be built against Darling's SDK. Apps import only the force-load symbol from these,
+# so each is ForceLoad/ForceLoad.swift built under its module name:
+FORCE_LOAD_ONLY_OVERLAYS="AVFoundation Accelerate Compression CoreAudio CoreImage CoreLocation GLKit GameplayKit Intents MapKit Metal MetalKit ModelIO SpriteKit simd"
+# and these two carry the API apps do import, clean-room (see README).
+SDK_OVERLAYS="$FORCE_LOAD_ONLY_OVERLAYS CoreMedia Network"
+build_sdk_overlays() {
+	for module in $FORCE_LOAD_ONLY_OVERLAYS; do
+		build_module "$module" "$here/ForceLoad/ForceLoad.swift"
+	done
+	build_module CoreMedia "$here/CoreMedia/CoreMedia.swift" -- -Xcc -fmodule-map-file="$here/CoreMedia/shims/module.modulemap"
+	build_module Network "$here/Network/Network.swift" -- -Xcc -fmodule-map-file="$here/Network/shims/module.modulemap" --link -lswiftDarwin
+}
+
 build_module Darwin "$here"/Darwin/*.swift
-build_module ObjectiveC "$here/ObjectiveC/ObjectiveC.swift" -- -disable-objc-attr-requires-foundation-module --link -lswiftDarwin
-build_module CoreFoundation "$here"/CoreFoundation/*.swift --link "$corefoundation" -lswiftDarwin
-"$SWIFT_TOOLCHAIN/bin/clang++" -target arm64-apple-macosx26.0 $ARM64_C_CPU -isysroot "$DARLING_SDK" -I "$here/Dispatch/include" \
-	-std=c++17 -fobjc-arc -O2 -c "$here/Dispatch/Dispatch.mm" -o "$out/obj/Dispatch.mm.o"
-"$SWIFT_TOOLCHAIN/bin/clang" -target arm64-apple-macosx26.0 $ARM64_C_CPU -isysroot "$DARLING_SDK" -fobjc-arc -O2 \
-	-c "$here/Dispatch/DarlingSerialExecutor.m" -o "$out/obj/DarlingSerialExecutor.m.o"
-build_module Dispatch "$here"/Dispatch/*.swift --link "$out/obj/Dispatch.mm.o" "$out/obj/DarlingSerialExecutor.m.o" -lswiftObjectiveC -lswiftDarwin
-build_module os "$here/os/os.swift" -- -Xcc -fmodule-map-file="$here/os/shims/module.modulemap" --link -lswiftDarwin -lswiftObjectiveC -lswiftDispatch
-build_module XPC "$here/XPC/XPC.swift" -- -Xcc -fmodule-map-file="$here/XPC/shims/module.modulemap" --link -lswiftDarwin -lswiftObjectiveC -lswiftDispatch
-
-# The AppKit, QuartzCore and CoreText overlays re-export their Clang module, but only where the SDK ships one:
-# swift-darling's own SDK carries none of these frameworks, while an SDK built over Darling's in-tree headers
-# does. Without the re-export the Swift module shadows the Clang module and hides every Objective-C
-# type behind it; with it, against an SDK that has no such module, the import is a hard error.
-clang_module_flag() {
-	if [ -f "$DARLING_SDK/System/Library/Frameworks/$1.framework/Modules/module.modulemap" ]; then
-		printf -- '-D DARLING_%s_CLANG_MODULE' "$2"
-	fi
-}
-
-# The two overlays this repository added to the macOS Swift runtime, built together because the
-# AppKit overlay imports DeveloperToolsSupport for NSImage.init(resource:). DeveloperToolsSupport
-# is arm64-only: the repository carries no x86_64 slice to merge with (see the UniformTypeIdentifiers
-# and CoreText comments below). Symbols that would normally link from the Foundation and CoreGraphics
-# overlays resolve instead from the repository's own libswift*.dylib via -L "$repo", so this works
-# as a focused rebuild outside the full pipeline.
-build_appkit_overlays() {
-	foundation="$DARLING_ROOT/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation"
-	appkit="$DARLING_ROOT/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit"
-	coregraphics="$DARLING_ROOT/System/Library/Frameworks/CoreGraphics.framework/Versions/A/CoreGraphics"
-	build_module CoreGraphics "$here"/CoreGraphics/*.swift -- -Xcc -fmodule-map-file="$here/CoreGraphics/shims/module.modulemap" --link "$coregraphics" "$corefoundation" -lswiftCoreFoundation -lswiftDarwin
-	build_module DeveloperToolsSupport "$here/DeveloperToolsSupport/DeveloperToolsSupport.swift" --link "$foundation" -lswiftFoundation -lswiftObjectiveC -lswiftDarwin -L "$repo"
-	cp "$out/libswiftDeveloperToolsSupport.dylib" "$repo/libswiftDeveloperToolsSupport.dylib"
-	echo "updated libswiftDeveloperToolsSupport.dylib: $(llvm-lipo -archs "$repo/libswiftDeveloperToolsSupport.dylib")"
-	build_module AppKit "$here/AppKit/AppKit.swift" -- $(clang_module_flag AppKit APPKIT) -Xcc -fmodule-map-file="$here/AppKit/shims/module.modulemap" -Xcc -fmodule-map-file="$here/CoreGraphics/shims/module.modulemap" --link "$appkit" "$foundation" -lswiftFoundation -lswiftCoreGraphics -lswiftCoreFoundation -lswiftObjectiveC -lswiftDarwin -lswiftDeveloperToolsSupport -L "$repo"
-}
-
-# Focused mode, mirroring DARLING_SWIFT_FOUNDATION_ONLY: build and publish just the overlays this
-# change touches, skipping the Combine, Foundation and CryptoKit pipeline entirely.
-if [ "${DARLING_SWIFT_APPKIT_ONLY:-0}" = 1 ]; then
-	build_appkit_overlays
-	llvm-lipo -thin x86_64 "$repo/libswiftAppKit.dylib" -output "$out/AppKit.x86_64" 2>/dev/null || cp "$repo/libswiftAppKit.dylib" "$out/AppKit.x86_64"
-	llvm-lipo -create "$out/AppKit.x86_64" "$out/libswiftAppKit.dylib" -output "$repo/libswiftAppKit.dylib"
-	rm -f "$out/AppKit.x86_64"
-	echo "updated libswiftAppKit.dylib: $(llvm-lipo -archs "$repo/libswiftAppKit.dylib")"
+# Focused mode for the SDK overlays below, which need only the Darwin overlay; run before the
+# ObjectiveC overlay so an SDK whose ObjectiveC module cannot be built still builds them.
+if [ "${DARLING_SWIFT_SDK_OVERLAYS_ONLY:-0}" = 1 ]; then
+	build_sdk_overlays
+	# shellcheck disable=SC2086
+	merge_x86_64 $SDK_OVERLAYS
 	exit 0
 fi
-
+build_module ObjectiveC "$here/ObjectiveC/ObjectiveC.swift" -- -disable-objc-attr-requires-foundation-module --link -lswiftDarwin
+build_module CoreFoundation "$here"/CoreFoundation/*.swift --link "$corefoundation" -lswiftDarwin
 # Combine: OpenCombine built as module `Combine`, so its mangled names match what apps import.
 # Unlike the overlays above this is a framework binary, not a /usr/lib/swift dylib, and it has no
 # x86_64 slice to merge with. See overlays/README.md.
 #
 # Built before Foundation, and its .swiftmodule goes into "$out/modules": the Foundation overlay
 # imports Combine for NSObject.KeyValueObservingPublisher, so every client of Foundation has to be
-# able to load Combine, as with Apple's SDK. Combine itself is compiled without -I "$out/modules".
+# able to load Combine, as with Apple's SDK. Built before Dispatch, too: the Dispatch overlay makes
+# DispatchQueue a Combine Scheduler. Combine itself is compiled without -I "$out/modules".
 #
 # OpenCombine is fetched rather than vendored, for the same reason swift-collections is above.
 # The fork adds functional Merge and MergeMany publishers; the Darwin-specific adaptations
@@ -183,6 +172,8 @@ cp -R "$opencombine_src/Sources/OpenCombine" "$out/combine-src"
 for p in "$here"/Combine/patches/*.patch; do
 	patch -p1 -s -d "$out/combine-src" < "$p"
 done
+# Darling's additions: the parts of Apple's Combine OpenCombine lacks (see Combine/Darling).
+cp "$here"/Combine/Darling/*.swift "$out/combine-src/"
 
 "$SWIFT_TOOLCHAIN/bin/clang" -target arm64-apple-macosx26.0 $ARM64_C_CPU -isysroot "$DARLING_SDK" \
 	-I "$opencombine_src/Sources/COpenCombineHelpers/include" -Wall -Wextra -O2 -fvisibility=hidden \
@@ -211,6 +202,57 @@ mkdir -p "$repo/Combine.framework/Versions/A"
 	-lswiftCore \
 	-o "$repo/Combine.framework/Versions/A/Combine"
 echo "updated Combine.framework: $(llvm-lipo -archs "$repo/Combine.framework/Versions/A/Combine")"
+
+"$SWIFT_TOOLCHAIN/bin/clang++" -target arm64-apple-macosx26.0 $ARM64_C_CPU -isysroot "$DARLING_SDK" -I "$here/Dispatch/include" \
+	-std=c++17 -fobjc-arc -O2 -c "$here/Dispatch/Dispatch.mm" -o "$out/obj/Dispatch.mm.o"
+"$SWIFT_TOOLCHAIN/bin/clang" -target arm64-apple-macosx26.0 $ARM64_C_CPU -isysroot "$DARLING_SDK" -fobjc-arc -O2 \
+	-c "$here/Dispatch/DarlingSerialExecutor.m" -o "$out/obj/DarlingSerialExecutor.m.o"
+build_module Dispatch "$here"/Dispatch/*.swift --link "$out/obj/Dispatch.mm.o" "$out/obj/DarlingSerialExecutor.m.o" "$repo/Combine.framework/Versions/A/Combine" -lswiftObjectiveC -lswiftDarwin
+build_module os "$here/os/os.swift" -- -Xcc -fmodule-map-file="$here/os/shims/module.modulemap" --link -lswiftDarwin -lswiftObjectiveC -lswiftDispatch
+build_module XPC "$here/XPC/XPC.swift" -- -Xcc -fmodule-map-file="$here/XPC/shims/module.modulemap" --link -lswiftDarwin -lswiftObjectiveC -lswiftDispatch
+
+# The AppKit, QuartzCore and CoreText overlays re-export their Clang module, but only where the SDK ships one:
+# swift-darling's own SDK carries none of these frameworks, while an SDK built over Darling's in-tree headers
+# does. Without the re-export the Swift module shadows the Clang module and hides every Objective-C
+# type behind it; with it, against an SDK that has no such module, the import is a hard error.
+clang_module_flag() {
+	if [ -f "$DARLING_SDK/System/Library/Frameworks/$1.framework/Modules/module.modulemap" ]; then
+		printf -- '-D DARLING_%s_CLANG_MODULE' "$2"
+	fi
+}
+
+# The two overlays this repository added to the macOS Swift runtime, built together because the
+# AppKit overlay imports DeveloperToolsSupport for NSImage.init(resource:). DeveloperToolsSupport
+# is arm64-only: the repository carries no x86_64 slice to merge with (see the UniformTypeIdentifiers
+# and CoreText comments below). Symbols that would normally link from the Foundation and CoreGraphics
+# overlays resolve instead from the repository's own libswift*.dylib via -L "$repo", so this works
+# as a focused rebuild outside the full pipeline.
+build_appkit_overlays() {
+	foundation="$DARLING_ROOT/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation"
+	appkit="$DARLING_ROOT/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit"
+	coregraphics="$DARLING_ROOT/System/Library/Frameworks/CoreGraphics.framework/Versions/A/CoreGraphics"
+	# CGFloat lives in the CoreFoundation overlay (as in current SDKs), but binaries built against
+	# SDKs where it was CoreGraphics' bind its metadata and conformances to libswiftCoreGraphics
+	# (Lottie does): re-export the CoreFoundation overlay so dyld finds them through this one.
+	build_module CoreGraphics "$here"/CoreGraphics/*.swift -- -Xcc -fmodule-map-file="$here/CoreGraphics/shims/module.modulemap" --link "$coregraphics" "$corefoundation" -reexport_library "$out/libswiftCoreFoundation.dylib" -lswiftDarwin
+	build_module DeveloperToolsSupport "$here/DeveloperToolsSupport/DeveloperToolsSupport.swift" --link "$foundation" -lswiftFoundation -lswiftObjectiveC -lswiftDarwin -L "$repo"
+	cp "$out/libswiftDeveloperToolsSupport.dylib" "$repo/libswiftDeveloperToolsSupport.dylib"
+	echo "updated libswiftDeveloperToolsSupport.dylib: $(llvm-lipo -archs "$repo/libswiftDeveloperToolsSupport.dylib")"
+	build_module AppKit "$here/AppKit/AppKit.swift" -- $(clang_module_flag AppKit APPKIT) -Xcc -fmodule-map-file="$here/AppKit/shims/module.modulemap" -Xcc -fmodule-map-file="$here/CoreGraphics/shims/module.modulemap" --link "$appkit" "$foundation" -lswiftFoundation -lswiftCoreGraphics -lswiftCoreFoundation -lswiftObjectiveC -lswiftDarwin -lswiftDeveloperToolsSupport -L "$repo"
+}
+
+# Focused mode, mirroring DARLING_SWIFT_FOUNDATION_ONLY: build and publish just the overlays this
+# change touches, skipping the Combine, Foundation and CryptoKit pipeline entirely.
+if [ "${DARLING_SWIFT_APPKIT_ONLY:-0}" = 1 ]; then
+	build_appkit_overlays
+	llvm-lipo -thin x86_64 "$repo/libswiftAppKit.dylib" -output "$out/AppKit.x86_64" 2>/dev/null || cp "$repo/libswiftAppKit.dylib" "$out/AppKit.x86_64"
+	llvm-lipo -create "$out/AppKit.x86_64" "$out/libswiftAppKit.dylib" -output "$repo/libswiftAppKit.dylib"
+	rm -f "$out/AppKit.x86_64"
+	echo "updated libswiftAppKit.dylib: $(llvm-lipo -archs "$repo/libswiftAppKit.dylib")"
+	exit 0
+fi
+
+
 
 # AttributedString stores its text in swift-collections' BigString. Both modules are an
 # implementation detail of the Foundation overlay: they are compiled without library evolution
@@ -416,6 +458,8 @@ build_module QuartzCore "$here/QuartzCore/QuartzCore.swift" -- $(clang_module_fl
 scenekit="$DARLING_ROOT/System/Library/Frameworks/SceneKit.framework/Versions/A/SceneKit"
 build_module SceneKit "$here/SceneKit/SceneKit.swift" -- -Xcc -fmodule-map-file="$here/SceneKit/shims/module.modulemap" -Xcc -fmodule-map-file="$here/CoreGraphics/shims/module.modulemap" --link "$scenekit" "$foundation" "$corefoundation" -lswiftFoundation -lswiftCoreGraphics -lswiftCoreFoundation -lswiftObjectiveC -lswiftDarwin
 
+build_sdk_overlays
+
 # UniformTypeIdentifiers is arm64-only: the x86_64 slice built from ../libswiftUniformTypeIdentifiers.S held
 # placeholder values, so there is nothing to merge with.
 uti="$DARLING_ROOT/System/Library/Frameworks/UniformTypeIdentifiers.framework/Versions/A/UniformTypeIdentifiers"
@@ -533,10 +577,5 @@ mkdir -p "$repo/CryptoKit.framework/Versions/A"
 	-o "$repo/CryptoKit.framework/Versions/A/CryptoKit"
 echo "updated CryptoKit.framework: $(llvm-lipo -archs "$repo/CryptoKit.framework/Versions/A/CryptoKit")"
 
-for module in Darwin ObjectiveC CoreFoundation Dispatch os XPC Foundation CoreGraphics AppKit QuartzCore SceneKit; do
-	dylib="libswift$module.dylib"
-	llvm-lipo -thin x86_64 "$repo/$dylib" -output "$out/$dylib.x86_64" 2>/dev/null || cp "$repo/$dylib" "$out/$dylib.x86_64"
-	llvm-lipo -create "$out/$dylib.x86_64" "$out/$dylib" -output "$repo/$dylib"
-	rm "$out/$dylib.x86_64"
-	echo "updated $dylib: $(llvm-lipo -archs "$repo/$dylib")"
-done
+# shellcheck disable=SC2086
+merge_x86_64 Darwin ObjectiveC CoreFoundation Dispatch os XPC Foundation CoreGraphics AppKit QuartzCore SceneKit $SDK_OVERLAYS

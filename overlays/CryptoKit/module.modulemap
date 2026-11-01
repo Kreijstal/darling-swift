@@ -2,3 +2,8 @@ module DarlingAEAD {
     header "aead.h"
     export *
 }
+
+module DarlingP256 {
+    header "p256.h"
+    export *
+}

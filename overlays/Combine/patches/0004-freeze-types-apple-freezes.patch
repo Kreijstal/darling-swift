@@ -1,0 +1,94 @@
+Freeze the four types Apple's Combine declares @frozen, and fix their boxes' layout
+
+AnyPublisher, AnySubscriber, Subscribers.Demand and Subscribers.Completion are
+@frozen in the iOS and macOS SDKs, so apps built against them lay them out and
+inline their code: an AnyPublisher comes back in a register rather than through
+an indirect result, and its PublisherBox is allocated by the app. Their stored
+properties here match the SDK's (box; the four thunks and combineIdentifier;
+rawValue; finished/failure), so freezing them gives the same layout. The box
+classes behind them are @_fixed_layout in the SDK, with the same fields as here.
+
+diff -ru a/AnyPublisher.swift b/AnyPublisher.swift
+--- a/AnyPublisher.swift	2026-11-01 02:48:59.641786875 +0100
++++ b/AnyPublisher.swift	2026-11-01 02:49:31.604362230 +0100
+@@ -62,6 +62,7 @@
+ ///
+ /// You can use OpenCombine’s `eraseToAnyPublisher()` operator to wrap a publisher with
+ /// `AnyPublisher`.
++@frozen
+ public struct AnyPublisher<Output, Failure: Error>
+   : CustomStringConvertible,
+     CustomPlaygroundDisplayConvertible
+@@ -113,6 +114,7 @@
+ /// A type-erasing base class. Its concrete subclass is generic over the underlying
+ /// publisher.
+ @usableFromInline
++@_fixed_layout
+ internal class PublisherBoxBase<Output, Failure: Error>: Publisher {
+ 
+     @inlinable
+@@ -127,6 +129,7 @@
+ }
+ 
+ @usableFromInline
++@_fixed_layout
+ internal final class PublisherBox<PublisherType: Publisher>
+     : PublisherBoxBase<PublisherType.Output, PublisherType.Failure>
+ {
+diff -ru a/AnySubscriber.swift b/AnySubscriber.swift
+--- a/AnySubscriber.swift	2026-11-01 02:48:59.647786983 +0100
++++ b/AnySubscriber.swift	2026-11-01 02:49:31.604362230 +0100
+@@ -11,6 +11,7 @@
+ /// expose. You can also use `AnySubscriber` to create a custom subscriber by providing
+ /// closures for the methods defined in `Subscriber`, rather than implementing
+ /// `Subscriber` directly.
++@frozen
+ public struct AnySubscriber<Input, Failure: Error>: Subscriber,
+                                                     CustomStringConvertible,
+                                                     CustomReflectable,
+@@ -131,6 +132,7 @@
+ /// A type-erasing base class. Its concrete subclass is generic over the underlying
+ /// subscriber.
+ @usableFromInline
++@_fixed_layout
+ internal class AnySubscriberBase<Input, Failure: Error>: Subscriber {
+ 
+     @inline(__always)
+@@ -158,6 +160,7 @@
+ }
+ 
+ @usableFromInline
++@_fixed_layout
+ internal final class AnySubscriberBox<Base: Subscriber>
+     : AnySubscriberBase<Base.Input, Base.Failure>
+ {
+@@ -189,6 +192,7 @@
+ }
+ 
+ @usableFromInline
++@_fixed_layout
+ internal final class ClosureBasedAnySubscriber<Input, Failure: Error>
+     : AnySubscriberBase<Input, Failure>
+ {
+diff -ru a/Subscribers/Subscribers.Completion.swift b/Subscribers/Subscribers.Completion.swift
+--- a/Subscribers/Subscribers.Completion.swift	2026-11-01 02:48:59.645786947 +0100
++++ b/Subscribers/Subscribers.Completion.swift	2026-11-01 02:48:59.686787685 +0100
+@@ -13,6 +13,7 @@
+ 
+     /// A signal that a publisher doesn’t produce additional elements, either due to
+     /// normal completion or an error.
++    @frozen
+     public enum Completion<Failure: Error> {
+ 
+         /// The publisher finished normally.
+diff -ru a/Subscribers/Subscribers.Demand.swift b/Subscribers/Subscribers.Demand.swift
+--- a/Subscribers/Subscribers.Demand.swift	2026-11-01 02:48:59.645786947 +0100
++++ b/Subscribers/Subscribers.Demand.swift	2026-11-01 02:48:59.686787685 +0100
+@@ -15,6 +15,7 @@
+ 
+     /// A requested number of items, sent to a publisher from a subscriber through
+     /// the subscription.
++    @frozen
+     public struct Demand: Equatable,
+                           Comparable,
+                           Hashable,

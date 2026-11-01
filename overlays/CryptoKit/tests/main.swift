@@ -65,3 +65,22 @@ rejects { _ = try ChaChaPoly.seal(Data(), using: SymmetricKey(data: Data(repeati
 rejects { _ = try ChaChaPoly.Nonce(data: Data(repeating: 0, count: 11)) }
 precondition(Data(SHA256.hash(data: Data("abc".utf8))) == hex("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"))
 print("Key/nonce validation and existing SHA256 behavior pass")
+
+// P-256: the curve's base point G (SEC 2 section 2.4.2) is a valid public key.
+let gx = hex("6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296")
+let gy = hex("4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5")
+let g963 = Data([4]) + gx + gy
+let g = try P256.KeyAgreement.PublicKey(x963Representation: g963)
+precondition(g.x963Representation == g963)
+precondition(g.rawRepresentation == gx + gy)
+precondition(g.compressedRepresentation == Data([3]) + gx)
+let fromRaw = try P256.KeyAgreement.PublicKey(rawRepresentation: gx + gy)
+precondition(fromRaw.x963Representation == g963)
+let fromCompressed = try P256.KeyAgreement.PublicKey(compressedRepresentation: Data([3]) + gx)
+precondition(fromCompressed.x963Representation == g963)
+var offCurve = g963
+offCurve[offCurve.endIndex - 1] ^= 1
+rejects { _ = try P256.KeyAgreement.PublicKey(x963Representation: offCurve) }
+rejects { _ = try P256.KeyAgreement.PublicKey(x963Representation: g963.dropLast()) }
+rejects { _ = try P256.KeyAgreement.PublicKey(x963Representation: Data(repeating: 0, count: 65)) }
+print("P256.KeyAgreement.PublicKey: X9.63, raw and compressed forms, off-curve and size rejection pass")
