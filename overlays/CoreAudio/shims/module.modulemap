@@ -1,0 +1,4 @@
+module _DarlingCoreAudioShims [system] {
+  header "DarlingCoreAudioShims.h"
+  export *
+}
