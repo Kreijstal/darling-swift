@@ -1,9 +1,13 @@
 // Network Swift overlay for Darling, written from Apple's public Network framework documentation
-// and the symbol names apps built against the iOS SDK import. Apple's NWPathMonitor wraps the
-// nw_path C API, which Darling's Network framework does not implement; this one reads the
-// interfaces from getifaddrs instead. Only path monitoring is provided: no NWConnection,
-// NWListener or NWEndpoint.
+// and the declarations in the iOS SDK's Network.swiftinterface, so apps built against that SDK find
+// the symbols they import. Apple's overlay wraps the nw_* C API, which Darling's libnetwork only
+// stubs; this one is built on BSD sockets and Dispatch instead (Connection.swift, Listener.swift),
+// with TLS from libnetwork's libtls session (darling_tls.m). This file has the interfaces and
+// path monitoring, which reads the interfaces from getifaddrs.
 @_exported import _DarlingNetworkShims
+import Darwin
+import Dispatch
+import Foundation
 
 /// A network interface on the host.
 public struct NWInterface: Hashable, CustomDebugStringConvertible {
@@ -23,7 +27,7 @@ public struct NWInterface: Hashable, CustomDebugStringConvertible {
 
 	/// The type a Linux interface name stands for. Darling reports the host's interfaces, so
 	/// these are Linux and Android names, not Darwin's en0 and pdp_ip0.
-	fileprivate static func type(ofInterfaceNamed name: String) -> InterfaceType {
+	internal static func type(ofInterfaceNamed name: String) -> InterfaceType {
 		func starts(_ prefixes: String...) -> Bool { prefixes.contains { name.hasPrefix($0) } }
 		if starts("lo") { return .loopback }
 		if starts("wlan", "wl", "wifi", "ath", "ra") { return .wifi }
@@ -57,6 +61,32 @@ public struct NWPath: Equatable, CustomDebugStringConvertible {
 	public let supportsIPv4: Bool
 	public let supportsIPv6: Bool
 	public let supportsDNS: Bool
+	public let localEndpoint: NWEndpoint?
+	public let remoteEndpoint: NWEndpoint?
+	/// Darling reads no routing table, so no gateway is known.
+	public var gateways: [NWEndpoint] { [] }
+
+	internal init(status: Status, unsatisfiedReason: UnsatisfiedReason, availableInterfaces: [NWInterface],
+	              isExpensive: Bool, isConstrained: Bool, supportsIPv4: Bool, supportsIPv6: Bool, supportsDNS: Bool,
+	              localEndpoint: NWEndpoint? = nil, remoteEndpoint: NWEndpoint? = nil) {
+		self.status = status
+		self.unsatisfiedReason = unsatisfiedReason
+		self.availableInterfaces = availableInterfaces
+		self.isExpensive = isExpensive
+		self.isConstrained = isConstrained
+		self.supportsIPv4 = supportsIPv4
+		self.supportsIPv6 = supportsIPv6
+		self.supportsDNS = supportsDNS
+		self.localEndpoint = localEndpoint
+		self.remoteEndpoint = remoteEndpoint
+	}
+
+	/// The current path, as a connection between two endpoints uses it.
+	internal func connected(local: NWEndpoint?, remote: NWEndpoint?) -> NWPath {
+		NWPath(status: .satisfied, unsatisfiedReason: unsatisfiedReason, availableInterfaces: availableInterfaces,
+		       isExpensive: isExpensive, isConstrained: isConstrained, supportsIPv4: supportsIPv4,
+		       supportsIPv6: supportsIPv6, supportsDNS: supportsDNS, localEndpoint: local, remoteEndpoint: remote)
+	}
 
 	public func usesInterfaceType(_ type: NWInterface.InterfaceType) -> Bool {
 		availableInterfaces.first?.type == type
@@ -70,7 +100,7 @@ public struct NWPath: Equatable, CustomDebugStringConvertible {
 	/// The path over the interfaces that are up and have an address, loopback last. When the
 	/// host's interfaces cannot be read (Android may refuse an app the netlink socket), the path
 	/// is reported satisfied rather than leaving the app believing it is offline.
-	fileprivate static func current(required: NWInterface.InterfaceType?, prohibited: [NWInterface.InterfaceType]) -> NWPath {
+	internal static func current(required: NWInterface.InterfaceType?, prohibited: [NWInterface.InterfaceType]) -> NWPath {
 		var list: UnsafeMutablePointer<_DarlingIfaddrs>?
 		guard _DarlingGetifaddrs(&list) == 0 else {
 			return NWPath(status: .satisfied, unsatisfiedReason: .notAvailable, availableInterfaces: [], isExpensive: false, isConstrained: false, supportsIPv4: true, supportsIPv6: false, supportsDNS: true)
@@ -110,31 +140,28 @@ public struct NWPath: Equatable, CustomDebugStringConvertible {
 /// lives and is not cancelled. Darling has no routing socket to watch for changes.
 private final class Poller {
 	weak var monitor: NWPathMonitor?
-	let queue: OS_dispatch_queue
+	let queue: DispatchQueue
 	var cancelled = false
 	var delivered = false
 
-	init(monitor: NWPathMonitor, queue: OS_dispatch_queue) {
+	init(monitor: NWPathMonitor, queue: DispatchQueue) {
 		self.monitor = monitor
 		self.queue = queue
 	}
 
 	func schedule() {
-		let context = Unmanaged.passRetained(self).toOpaque()
+		let fire = { [self] in
+			guard !cancelled, let monitor = monitor else { return }
+			monitor.update(force: !delivered)
+			delivered = true
+			schedule()
+		}
 		if delivered {
-			dispatch_after_f(dispatch_time(0, 2_000_000_000), queue, context, pollerFired)
+			queue.asyncAfter(deadline: .now() + 2, execute: fire)
 		} else {
-			dispatch_async_f(queue, context, pollerFired)
+			queue.async(execute: fire)
 		}
 	}
-}
-
-private let pollerFired: @convention(c) (UnsafeMutableRawPointer?) -> Void = { context in
-	let poller = Unmanaged<Poller>.fromOpaque(context!).takeRetainedValue()
-	guard !poller.cancelled, let monitor = poller.monitor else { return }
-	monitor.update(force: !poller.delivered)
-	poller.delivered = true
-	poller.schedule()
 }
 
 /// Reports the network path, and each change to it, on a queue.
@@ -143,7 +170,7 @@ public final class NWPathMonitor {
 	private let prohibitedInterfaceTypes: [NWInterface.InterfaceType]
 	private var poller: Poller?
 
-	public private(set) var queue: OS_dispatch_queue?
+	public private(set) var queue: DispatchQueue?
 	public var currentPath: NWPath
 	public var pathUpdateHandler: ((_ newPath: NWPath) -> Void)?
 
@@ -166,7 +193,7 @@ public final class NWPathMonitor {
 	}
 
 	/// Starts monitoring: the handler gets the current path at once, then every change.
-	public func start(queue: OS_dispatch_queue) {
+	public func start(queue: DispatchQueue) {
 		guard self.queue == nil else { return }
 		self.queue = queue
 		let poller = Poller(monitor: self, queue: queue)
