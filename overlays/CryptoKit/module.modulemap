@@ -7,3 +7,8 @@ module DarlingP256 {
     header "p256.h"
     export *
 }
+
+module DarlingDigests {
+    header "digests.h"
+    export *
+}
