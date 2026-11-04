@@ -88,6 +88,17 @@ build_module() {
 corefoundation="$DARLING_ROOT/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation"
 
 build_module Darwin "$here"/Darwin/*.swift
+
+# CoreAudio: clean-room (CoreAudio/CoreAudio.swift, see README); it needs only the Darwin overlay.
+# The arm64 slice is merged with the x86_64 one already in the repository.
+build_module CoreAudio "$here/CoreAudio/CoreAudio.swift" -- -Xcc -fmodule-map-file="$here/CoreAudio/shims/module.modulemap" --link -lswiftDarwin
+llvm-lipo -thin x86_64 "$repo/libswiftCoreAudio.dylib" -output "$out/CoreAudio.x86_64" 2>/dev/null || cp "$repo/libswiftCoreAudio.dylib" "$out/CoreAudio.x86_64"
+llvm-lipo -create "$out/CoreAudio.x86_64" "$out/libswiftCoreAudio.dylib" -output "$repo/libswiftCoreAudio.dylib"
+rm -f "$out/CoreAudio.x86_64"
+echo "updated libswiftCoreAudio.dylib: $(llvm-lipo -archs "$repo/libswiftCoreAudio.dylib")"
+if [ "${DARLING_SWIFT_COREAUDIO_ONLY:-0}" = 1 ]; then
+	exit 0
+fi
 build_module ObjectiveC "$here/ObjectiveC/ObjectiveC.swift" -- -disable-objc-attr-requires-foundation-module --link -lswiftDarwin
 build_module CoreFoundation "$here"/CoreFoundation/*.swift --link "$corefoundation" -lswiftDarwin
 "$SWIFT_TOOLCHAIN/bin/clang++" -target arm64-apple-macosx26.0 -isysroot "$DARLING_SDK" -I "$here/Dispatch/include" \
