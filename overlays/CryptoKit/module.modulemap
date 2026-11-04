@@ -2,3 +2,8 @@ module DarlingAEAD {
     header "aead.h"
     export *
 }
+
+module DarlingECC {
+    header "ecc.h"
+    export *
+}

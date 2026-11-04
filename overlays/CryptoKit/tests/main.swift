@@ -65,3 +65,5 @@ rejects { _ = try ChaChaPoly.seal(Data(), using: SymmetricKey(data: Data(repeati
 rejects { _ = try ChaChaPoly.Nonce(data: Data(repeating: 0, count: 11)) }
 precondition(Data(SHA256.hash(data: Data("abc".utf8))) == hex("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"))
 print("Key/nonce validation and existing SHA256 behavior pass")
+
+runP256Tests()
