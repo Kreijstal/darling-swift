@@ -103,6 +103,36 @@ extension String {
     self = String._unconditionallyBridgeFromObjectiveC(s)
   }
 
+  /// Produces a string created by reading data from the file at a
+  /// given path interpreted using a given encoding.
+  public init(contentsOfFile path: __shared String, encoding enc: Encoding) throws {
+    try self.init(contentsOf: URL(fileURLWithPath: path), encoding: enc)
+  }
+
+  /// Produces a string created by reading data from a given URL
+  /// interpreted using a given encoding. Darling reads the data whole and
+  /// decodes it, so a decoding failure throws
+  /// `CocoaError.fileReadInapplicableStringEncoding`.
+  public init(contentsOf url: __shared URL, encoding enc: Encoding) throws {
+    let data = try Data(contentsOf: url)
+    guard let string = String(data: data, encoding: enc) else {
+      throw CocoaError(.fileReadInapplicableStringEncoding,
+                       userInfo: ["NSURL": url, "NSStringEncoding": NSNumber(value: enc.rawValue)])
+    }
+    self = string
+  }
+
+  /// The encodings CoreFoundation can convert, as NSString encodings.
+  public static var availableStringEncodings: [Encoding] {
+    var result: [Encoding] = []
+    guard var encoding = CFStringGetListOfAvailableEncodings() else { return result }
+    while encoding.pointee != kCFStringEncodingInvalidId {
+      result.append(Encoding(rawValue: UInt(CFStringConvertEncodingToNSStringEncoding(encoding.pointee))))
+      encoding += 1
+    }
+    return result
+  }
+
   /// Produces a string containing the bytes in a given C array,
   /// interpreted according to a given encoding.
   public init?(cString: UnsafePointer<CChar>, encoding enc: Encoding) {

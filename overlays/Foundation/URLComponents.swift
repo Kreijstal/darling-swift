@@ -192,25 +192,59 @@ public struct URLComponents : Hashable, Equatable {
     /// A URL string created from the components, or nil if the components can't form a valid URL (an authority with
     /// a path that doesn't start with "/", or no authority with a path starting with "//").
     public var string: String? {
+        return _layout()?.string
+    }
+
+    /// The URL string and the UTF-8 offsets of each component in it: scheme, user, password, host, port, path,
+    /// query and fragment, nil for the components that are not set.
+    private func _layout() -> (string: String, ranges: [Range<Int>?])? {
         if _hasAuthority && !_path.isEmpty && !_path.hasPrefix("/") { return nil }
         if !_hasAuthority && _path.hasPrefix("//") { return nil }
         var result = ""
-        if let scheme = _scheme { result += scheme + ":" }
+        var ranges: [Range<Int>?] = []
+        func append(_ component: String?, before: String = "", after: String = "") {
+            guard let component = component else {
+                ranges.append(nil)
+                return
+            }
+            result += before
+            let start = result.utf8.count
+            result += component
+            ranges.append(start..<result.utf8.count)
+            result += after
+        }
+        append(_scheme, after: ":")
         if _hasAuthority {
             result += "//"
-            if _user != nil || _password != nil {
-                result += _user ?? ""
-                if let password = _password { result += ":" + password }
-                result += "@"
-            }
-            result += _host ?? ""
-            if let port = _port { result += ":" + String(port) }
+            append(_user)
+            append(_password, before: ":")
+            if _user != nil || _password != nil { result += "@" }
+            append(_host)
+            append(_port.map { String($0) }, before: ":")
+        } else {
+            ranges += [nil, nil, nil, nil]
         }
-        result += _path
-        if let query = _query { result += "?" + query }
-        if let fragment = _fragment { result += "#" + fragment }
-        return result
+        append(_path)
+        append(_query, before: "?")
+        append(_fragment, before: "#")
+        return (result, ranges)
     }
+
+    /// Where component `index` of `_layout()` lies in `string`.
+    private func _range(_ index: Int) -> Range<String.Index>? {
+        guard let (string, ranges) = _layout(), let range = ranges[index] else { return nil }
+        let utf8 = string.utf8
+        return utf8.index(utf8.startIndex, offsetBy: range.lowerBound)..<utf8.index(utf8.startIndex, offsetBy: range.upperBound)
+    }
+
+    public var rangeOfScheme: Range<String.Index>? { return _range(0) }
+    public var rangeOfUser: Range<String.Index>? { return _range(1) }
+    public var rangeOfPassword: Range<String.Index>? { return _range(2) }
+    public var rangeOfHost: Range<String.Index>? { return _range(3) }
+    public var rangeOfPort: Range<String.Index>? { return _range(4) }
+    public var rangeOfPath: Range<String.Index>? { return _range(5) }
+    public var rangeOfQuery: Range<String.Index>? { return _range(6) }
+    public var rangeOfFragment: Range<String.Index>? { return _range(7) }
 
     /// A URL created from the components, or nil if they can't form a valid URL.
     public var url: URL? {

@@ -59,6 +59,30 @@ public struct URLResourceValues {
     public var fileSize: Int? {
         return _number(.fileSizeKey)?.integerValue()
     }
+
+    public var fileAllocatedSize: Int? {
+        return _number(.fileAllocatedSizeKey)?.integerValue()
+    }
+
+    public var totalFileSize: Int? {
+        return _number(.totalFileSizeKey)?.integerValue()
+    }
+
+    public var totalFileAllocatedSize: Int? {
+        return _number(.totalFileAllocatedSizeKey)?.integerValue()
+    }
+
+    public var contentAccessDate: Date? {
+        return _get(.contentAccessDateKey)
+    }
+
+    public var contentModificationDate: Date? {
+        return _get(.contentModificationDateKey)
+    }
+
+    public var isUbiquitousItem: Bool? {
+        return _number(.isUbiquitousItemKey)?.boolValue()
+    }
 }
 
 extension URL {

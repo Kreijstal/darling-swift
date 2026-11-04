@@ -196,7 +196,10 @@ extension Bool : _ObjectiveCBridgeable {
     }
 
     public init?(exactly number: __shared NSNumber) {
-        if NSNumber(value: 1) == number {
+        // A CFBoolean (+numberWithBool:) is not equal to the integers 1 and 0.
+        if CFGetTypeID(number) == CFBooleanGetTypeID() {
+            self = number.boolValue()
+        } else if NSNumber(value: 1) == number {
             self = true
         } else if NSNumber(value: 0) == number {
             self = false

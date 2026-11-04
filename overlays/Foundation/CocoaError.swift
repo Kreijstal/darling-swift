@@ -10,8 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-// From release/5.4 stdlib/public/Darwin/Foundation/NSError.swift: CocoaError and its Code, with only the codes apps
-// import (the full code table is left out).
+// From release/5.4 stdlib/public/Darwin/Foundation/NSError.swift: CocoaError and its Code, with the file codes and
+// the few others apps import (the rest of the code table is left out).
 
 @_exported import Foundation // Clang module
 
@@ -45,6 +45,60 @@ public struct CocoaError : _BridgedStoredNSError {
 }
 
 extension CocoaError.Code {
+  public static var fileNoSuchFile: CocoaError.Code {
+    return CocoaError.Code(rawValue: 4)
+  }
+  public static var fileLocking: CocoaError.Code {
+    return CocoaError.Code(rawValue: 255)
+  }
+  public static var fileReadUnknown: CocoaError.Code {
+    return CocoaError.Code(rawValue: 256)
+  }
+  public static var fileReadNoPermission: CocoaError.Code {
+    return CocoaError.Code(rawValue: 257)
+  }
+  public static var fileReadInvalidFileName: CocoaError.Code {
+    return CocoaError.Code(rawValue: 258)
+  }
+  public static var fileReadCorruptFile: CocoaError.Code {
+    return CocoaError.Code(rawValue: 259)
+  }
+  public static var fileReadNoSuchFile: CocoaError.Code {
+    return CocoaError.Code(rawValue: 260)
+  }
+  public static var fileReadInapplicableStringEncoding: CocoaError.Code {
+    return CocoaError.Code(rawValue: 261)
+  }
+  public static var fileReadUnsupportedScheme: CocoaError.Code {
+    return CocoaError.Code(rawValue: 262)
+  }
+  public static var fileReadTooLarge: CocoaError.Code {
+    return CocoaError.Code(rawValue: 263)
+  }
+  public static var fileReadUnknownStringEncoding: CocoaError.Code {
+    return CocoaError.Code(rawValue: 264)
+  }
+  public static var fileWriteUnknown: CocoaError.Code {
+    return CocoaError.Code(rawValue: 512)
+  }
+  public static var fileWriteNoPermission: CocoaError.Code {
+    return CocoaError.Code(rawValue: 513)
+  }
+  public static var fileWriteInvalidFileName: CocoaError.Code {
+    return CocoaError.Code(rawValue: 514)
+  }
+  public static var fileWriteInapplicableStringEncoding: CocoaError.Code {
+    return CocoaError.Code(rawValue: 517)
+  }
+  public static var fileWriteUnsupportedScheme: CocoaError.Code {
+    return CocoaError.Code(rawValue: 518)
+  }
+  public static var fileWriteOutOfSpace: CocoaError.Code {
+    return CocoaError.Code(rawValue: 640)
+  }
+  public static var fileWriteVolumeReadOnly: CocoaError.Code {
+    return CocoaError.Code(rawValue: 642)
+  }
   /// `NSFormattingError` (2048), which the format styles' parse strategies throw.
   public static var formatting: CocoaError.Code {
     return CocoaError.Code(rawValue: 2048)
@@ -61,6 +115,60 @@ extension CocoaError.Code {
 }
 
 extension CocoaError {
+  public static var fileNoSuchFile: CocoaError.Code {
+    return CocoaError.Code(rawValue: 4)
+  }
+  public static var fileLocking: CocoaError.Code {
+    return CocoaError.Code(rawValue: 255)
+  }
+  public static var fileReadUnknown: CocoaError.Code {
+    return CocoaError.Code(rawValue: 256)
+  }
+  public static var fileReadNoPermission: CocoaError.Code {
+    return CocoaError.Code(rawValue: 257)
+  }
+  public static var fileReadInvalidFileName: CocoaError.Code {
+    return CocoaError.Code(rawValue: 258)
+  }
+  public static var fileReadCorruptFile: CocoaError.Code {
+    return CocoaError.Code(rawValue: 259)
+  }
+  public static var fileReadNoSuchFile: CocoaError.Code {
+    return CocoaError.Code(rawValue: 260)
+  }
+  public static var fileReadInapplicableStringEncoding: CocoaError.Code {
+    return CocoaError.Code(rawValue: 261)
+  }
+  public static var fileReadUnsupportedScheme: CocoaError.Code {
+    return CocoaError.Code(rawValue: 262)
+  }
+  public static var fileReadTooLarge: CocoaError.Code {
+    return CocoaError.Code(rawValue: 263)
+  }
+  public static var fileReadUnknownStringEncoding: CocoaError.Code {
+    return CocoaError.Code(rawValue: 264)
+  }
+  public static var fileWriteUnknown: CocoaError.Code {
+    return CocoaError.Code(rawValue: 512)
+  }
+  public static var fileWriteNoPermission: CocoaError.Code {
+    return CocoaError.Code(rawValue: 513)
+  }
+  public static var fileWriteInvalidFileName: CocoaError.Code {
+    return CocoaError.Code(rawValue: 514)
+  }
+  public static var fileWriteInapplicableStringEncoding: CocoaError.Code {
+    return CocoaError.Code(rawValue: 517)
+  }
+  public static var fileWriteUnsupportedScheme: CocoaError.Code {
+    return CocoaError.Code(rawValue: 518)
+  }
+  public static var fileWriteOutOfSpace: CocoaError.Code {
+    return CocoaError.Code(rawValue: 640)
+  }
+  public static var fileWriteVolumeReadOnly: CocoaError.Code {
+    return CocoaError.Code(rawValue: 642)
+  }
   /// `NSFormattingError`, declared on both types as in the SDK.
   public static var formatting: CocoaError.Code {
     return CocoaError.Code(rawValue: 2048)
