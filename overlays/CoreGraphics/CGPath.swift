@@ -43,6 +43,11 @@ extension CGMutablePath {
     var transform = transform
     CGPathAddRect(self, &transform, rect)
   }
+
+  public func addPath(_ path: CGPath, transform: CGAffineTransform = .identity) {
+    var transform = transform
+    CGPathAddPath(self, &transform, path)
+  }
 }
 
 extension CGPath {
