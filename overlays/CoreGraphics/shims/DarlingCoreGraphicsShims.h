@@ -12,9 +12,20 @@
 
 #include <CoreGraphics/CGContext.h>
 #include <CoreGraphics/CGGeometry.h>
+#include <CoreGraphics/CGPath.h>
 
 void CGContextAddLineToPoint(CGContextRef context, CGFloat x, CGFloat y);
 void CGContextAddArc(CGContextRef context, CGFloat x, CGFloat y, CGFloat radius, CGFloat startAngle, CGFloat endAngle,
                      bool clockwise);
+
+// Darling's CGPath.h does not declare this one. Prototype from Apple's documentation of
+// CGPathCreateCopyByDashingPath: transform and lengths may be NULL, and the result follows the Create
+// rule. Inside an implicit-bridging region, as in CGPath.h, so Swift gets a managed CGPath. Like the
+// declarations above it carries no nullability specifiers: one specifier anywhere in this file makes
+// Clang warn about every unannotated pointer in it. Swift sees implicitly unwrapped optionals.
+CF_IMPLICIT_BRIDGING_ENABLED
+CGPathRef CGPathCreateCopyByDashingPath(CGPathRef path, const CGAffineTransform *transform, CGFloat phase,
+                                        const CGFloat *lengths, size_t count);
+CF_IMPLICIT_BRIDGING_DISABLED
 
 #endif
