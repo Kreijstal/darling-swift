@@ -29,6 +29,7 @@ Sources/Crypto/Digests/HashFunctions_SHA2.swift
 Sources/Crypto/Digests/Darling/Digest_darling.swift
 Sources/Crypto/Keys/Symmetric/SymmetricKeys.swift
 Sources/Crypto/Insecure/Insecure.swift
+Sources/Crypto/Insecure/Insecure_HashFunctions.swift
 Sources/Crypto/Util/ArraySpanHelpers.swift
 Sources/Crypto/Util/Data+ArraySpan.swift
 Sources/Crypto/Util/PrettyBytes.swift
@@ -57,12 +58,15 @@ Sources/Crypto/AEADs/Nonces.swift
 Sources/Crypto/AEADs/AES/GCM/AES-GCM.swift
 Sources/Crypto/AEADs/ChachaPoly/ChaChaPoly.swift
 SOURCES
-printf '"%s"\n' "$here/AEAD.swift" >> "$out/sources"
+printf '"%s"\n' "$here/AEAD.swift" "$here/HashFunctions_LibreSSL.swift" >> "$out/sources"
 
-rm -f "$out/obj/AEAD.o" "$out/obj/CryptoKit.o" "$out/CryptoKit"
+rm -f "$out/obj/AEAD.o" "$out/obj/Digests.o" "$out/obj/CryptoKit.o" "$out/CryptoKit"
 "$SWIFT_TOOLCHAIN/bin/clang" -target arm64-apple-macosx26.0 -isysroot "$DARLING_SDK" \
     -I "$DARLING_SOURCE_ROOT/src/external/libressl-2.8.3/include" \
     -O2 -c "$here/aead.c" -o "$out/obj/AEAD.o"
+"$SWIFT_TOOLCHAIN/bin/clang" -target arm64-apple-macosx26.0 -isysroot "$DARLING_SDK" \
+    -I "$DARLING_SOURCE_ROOT/src/external/libressl-2.8.3/include" \
+    -O2 -c "$here/digests.c" -o "$out/obj/Digests.o"
 "$SWIFT_TOOLCHAIN/bin/swiftc" -frontend -c @"$out/sources" \
     -target arm64-apple-macosx26.0 -sdk "$DARLING_SDK" -resource-dir "$SWIFT_RESOURCE_DIR" \
     -module-cache-path "$out/module-cache" -swift-version 5 -module-name CryptoKit \
@@ -80,7 +84,7 @@ rm -f "$out/obj/AEAD.o" "$out/obj/CryptoKit.o" "$out/CryptoKit"
     -install_name /System/Library/Frameworks/CryptoKit.framework/Versions/A/CryptoKit \
     -compatibility_version 1.0.0 -current_version 1.0.0 \
     ${LD_EXTRA_FLAGS:-} -L "$SWIFT_RESOURCE_DIR/macosx" -L "$repo" \
-    "$out/obj/CryptoKit.o" "$out/obj/AEAD.o" "$DARLING_LIBSYSTEM" \
+    "$out/obj/CryptoKit.o" "$out/obj/AEAD.o" "$out/obj/Digests.o" "$DARLING_LIBSYSTEM" \
     "$DARLING_ROOT/usr/lib/libobjc.A.dylib" "$DARLING_ROOT/usr/lib/libcrypto.44.dylib" \
     -lswiftCore -lswiftFoundation -lswiftCoreFoundation -lswiftDarwin -lswiftObjectiveC \
     -o "$out/CryptoKit"

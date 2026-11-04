@@ -65,3 +65,27 @@ rejects { _ = try ChaChaPoly.seal(Data(), using: SymmetricKey(data: Data(repeati
 rejects { _ = try ChaChaPoly.Nonce(data: Data(repeating: 0, count: 11)) }
 precondition(Data(SHA256.hash(data: Data("abc".utf8))) == hex("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"))
 print("Key/nonce validation and existing SHA256 behavior pass")
+
+// FIPS 180-4 and RFC 1321 "abc" vectors, the empty message, and a stream fed
+// in uneven pieces across the block boundary.
+let abc = Data("abc".utf8)
+precondition(Data(SHA384.hash(data: abc)) == hex("cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7"))
+precondition(Data(SHA512.hash(data: abc)) == hex("ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"))
+precondition(Data(Insecure.SHA1.hash(data: abc)) == hex("a9993e364706816aba3e25717850c26c9cd0d89d"))
+precondition(Data(Insecure.MD5.hash(data: abc)) == hex("900150983cd24fb0d6963f7d28e17f72"))
+precondition(Data(Insecure.MD5.hash(data: Data())) == hex("d41d8cd98f00b204e9800998ecf8427e"))
+precondition(Data(SHA512.hash(data: Data())) == hex("cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"))
+let million = Data(repeating: UInt8(ascii: "a"), count: 1_000_000)
+var streamed = SHA512()
+var offset = 0
+for size in [1, 7, 127, 128, 129, 1000] where offset < million.count {
+    streamed.update(data: million[offset..<offset + size]); offset += size
+}
+let half = streamed
+streamed.update(data: million[offset...])
+precondition(Data(streamed.finalize()) == hex("e718483d0ce769644e2e42c7bc15b4638e1f98b13b2044285632a803afa973ebde0ff244877ea60a4cb0432ce577c31beb009c5c2c49aa2e4eadb217ad8cc09b"))
+precondition(Data(half.finalize()) == Data(SHA512.hash(data: million[..<offset])))
+precondition(Data(Insecure.SHA1.hash(data: million)) == hex("34aa973cd4c4daa4f61eeb2bdbad27316534016f"))
+let mac = HMAC<SHA512>.authenticationCode(for: Data("what do ya want for nothing?".utf8), using: SymmetricKey(data: Data("Jefe".utf8)))
+precondition(Data(mac) == hex("164b7a7bfcf819e2e395fbe73b56e0a387bd64222e831fd610270cd7ea2505549758bf75c05a994a6d034f65f8f0e6fdcaeab1a34d4a6b4b636e070a38bce737"))
+print("SHA384, SHA512, Insecure.SHA1 and Insecure.MD5 pass")

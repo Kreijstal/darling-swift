@@ -8,8 +8,14 @@ The upstream files retain their Apache-2.0 notices. `AEAD.swift` routes the APIs
 the runtime's existing LibreSSL implementation through `aead.c`.
 
 The bridge returns failure when authentication fails and clears partial plaintext.
-It supports AES keys of 128, 192 and 256 bits and 256-bit ChaCha20 keys. It does
-not add other CryptoKit algorithms. The current C backend links libcrypto.44.
+It supports AES keys of 128, 192 and 256 bits and 256-bit ChaCha20 keys.
+
+`HashFunctions_LibreSSL.swift` adds `SHA384`, `SHA512`, `Insecure.SHA1` and
+`Insecure.MD5` (the last two from upstream `Insecure_HashFunctions.swift` at the
+base pin), hashed by LibreSSL through `digests.c`. The fixture checks the
+FIPS 180-4 and RFC 1321 vectors, a one-million-byte stream fed in uneven pieces,
+a copied half-fed hash, and RFC 4231 HMAC-SHA-512. The current C backend links
+libcrypto.44.
 
 Use the same environment as `../build.sh`, plus:
 
