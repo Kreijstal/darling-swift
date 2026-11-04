@@ -1,35 +1,41 @@
 #!/bin/sh
-# Rebuild the arm64 slices of the Swift runtime libraries from the Swift 6.3.3 sources, for an
-# ARMv8.0 baseline with outline atomics, and merge them with the x86_64 slices already in the
-# repository (unchanged swift.org builds).
+# Rebuild the arm64 slices of the Swift runtime libraries in this repository from Swift's open
+# source, so that they run on any ARMv8.0-A CPU, and merge each with the x86_64 slice already here.
+# See README.md for the reasoning and how to check the result.
 #
-# Why: the arm64 slices in swift-6.3.3-RELEASE-osx.pkg target Apple M1 and contain ARMv8.1 LSE
-# atomics (cas, casp, ldadd, swp...) and ARMv8.3 RCpc loads (ldapr) inline: 722 such instructions
-# in libswiftCore alone. An ARMv8.0 core (Cortex-A72 in the Pi 4, Exynos M3 in phones) raises
-# SIGILL on the first one, the first time any Swift program allocates metadata. Here every
-# compiler gets -mcpu=apple-a7 -moutline-atomics (macos-arm64.cmake): atomics become calls to
-# compiler-rt's __aarch64_* helpers, linked into each library, which use LSE when
-# sysctl hw.optional.armv8_1_atomics says the CPU has it and exclusive loops otherwise.
+# Every C, C++, assembly and Swift file is compiled for arm64-apple-macosx13.0 with
+# -mcpu=apple-a7 -moutline-atomics (macos-arm64.cmake). Without -mcpu, clang picks apple-m1 for
+# an arm64-apple-macosx target, a CPU with the Armv8.1-A LSE atomics and the RCpc loads, which an
+# ARMv8.0 core such as the Cortex-A72 does not implement. apple-a7 is ARMv8.0-A. With
+# -moutline-atomics each atomic operation becomes a call to one of compiler-rt's helpers, which
+# use LSE only when the CPU has it.
+#
+# Built: libswiftCore, libswift_Concurrency, libswiftSwiftOnoneSupport, libswiftRemoteMirror
+# (Runtimes/Core); libswift_Builtin_float (Runtimes/Overlay); libswift_StringProcessing,
+# libswift_RegexParser, libswiftRegexBuilder, libswiftSynchronization, libswift_Volatile,
+# libswiftObservation, libswiftDistributed and libswift_Differentiation (Runtimes/Supplemental);
+# libswiftCompatibilitySpan.dylib is a symlink to libswiftCore.dylib. Not built:
+# libswiftRuntime (Runtimes/Supplemental/Runtime), which is compiled in C++ interoperability mode
+# and so needs the CxxStdlib overlay, whose libc++ module (std) does not build against Darling's
+# SDK; see README.md.
 #
 # Required environment:
-#   SWIFT_TOOLCHAIN   usr/ of the Swift 6.3.3 toolchain (the Linux release works)
-#   DARLING_ROOT      an installed Darling root (libexec/darling): libSystem, libobjc, libc++ and
-#                     libdispatch are linked from its usr/lib
-#   DARLING_SDK       Darling's MacOSX.sdk (Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
-#                     in the darling tree): the headers, frameworks and module maps
-#   CXX_HEADERS       a libc++ header directory (usr/include/c++ of an Apple SDK, e.g. an
-#                     iPhoneOS16.5.sdk); Darling's SDK has none. Headers only.
+#   SWIFT_TOOLCHAIN  usr/ of a Swift 6.3.3 toolchain (the Linux release works); only its swiftc is
+#                    used, and clang, ld64.lld, llvm-ar, llvm-lipo and llvm-objdump come from PATH
+#                    (ld64.lld must support Mach-O for macOS: the Swift Linux toolchain's does not)
+#   DARLING_ROOT     an installed Darling root; its usr/lib (except usr/lib/swift) is linked against
+#   DARLING_SDK      Darling's MacOSX.sdk (Developer/Platforms/MacOSX.platform/Developer/SDKs)
+#   CXX_HEADERS      a directory whose v1/ holds the libc++ headers (Darling's
+#                    src/external/libcxx/include, which carries its __config_site)
 # Optional:
-#   WORK              build directory (default ./build next to this script)
+#   WORK             build directory (default runtime/build)
+#   JOBS             parallel jobs (default nproc)
 #   SWIFT_SRC, STRING_PROCESSING_SRC, LLVM_SRC
-#                     existing checkouts of the pinned commits below, for an offline build.
-#                     Nothing verifies them, so point them at those commits. SWIFT_SRC is
-#                     written to (Runtimes/Resync.cmake copies stdlib sources into it).
-#   JOBS              ninja -j
-#
-# Output: the merged libraries are copied over the ones in the repository; the builtins archive
-# (WORK/builtins/libdarling_rt_builtins.a) and resource directory (WORK/resource) are what
-# ../overlays/build.sh takes as DARLING_RT_BUILTINS and SWIFT_RESOURCE_DIR.
+#                    existing checkouts of the pinned commits below, for an offline build. Nothing
+#                    checks them, so point them at those commits. Swift's Runtimes/Resync.cmake
+#                    writes into SWIFT_SRC, so it must be writable.
+#   MERGE_X86_64=0   stop after the check, leaving the arm64 libraries in $WORK/arm64
+
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -104,18 +110,28 @@ done
 for e in "$DARLING_ROOT"/usr/lib/*; do
 	[ "$(basename "$e")" = swift ] || ln -s "$e" "$sdk/usr/lib/"
 done
+# Observation imports Darwin.os.lock and _Differentiation imports Darwin.C.tgmath
+# (Runtimes/Supplemental/Observation/Sources/Observation/Locking.swift and
+# Runtimes/Supplemental/Differentiation/TgmathDerivatives.swift.gyb). Darling's Darwin module is
+# one umbrella without those submodules, so the sysroot gets a copy of its module map that adds
+# them. tgmath.h is clang's builtin header, found through -fbuiltin-headers-in-system-modules.
+rm "$sdk/usr/include/module.modulemap"
+awk '{ print } /^module Darwin / && !done { print "  module os {\n    module lock {\n      header \"os/lock.h\"\n      export *\n    }\n  }\n  module C {\n    module tgmath {\n      header \"tgmath.h\"\n      export *\n    }\n  }"; done = 1 }' \
+	"$DARLING_SDK/usr/include/module.modulemap" > "$sdk/usr/include/module.modulemap"
+grep -q 'module tgmath' "$sdk/usr/include/module.modulemap" || { echo "module map: Darwin submodules not added" >&2; exit 1; }
 cat > "$sdk/SDKSettings.json" <<'EOF'
 {"CanonicalName":"macosx15.2","DisplayName":"macOS 15.2","Version":"15.2","MaximumDeploymentTarget":"15.2.99","IsBaseSDK":"YES","DefaultDeploymentTarget":"15.2","SupportedTargets":{"macosx":{"Archs":["arm64","x86_64"],"LLVMTargetTripleVendor":"apple","LLVMTargetTripleSys":"macosx","DefaultDeploymentTarget":"15.2","MinimumDeploymentTarget":"10.13","MaximumDeploymentTarget":"15.2.99","PlatformFamilyName":"macOS"}}}
 EOF
 
-# compiler-rt builtins, which Apple's clang links into every binary from libclang_rt.osx.a and
-# Darling links without: the outline atomics helpers (lse.S, built once per operation, size and
-# memory order, as compiler-rt's CMake does), their flag's initialiser (outline-atomics-init.c,
-# written for Darling) and __isPlatformVersionAtLeast & co. (os_version_check.c). All hidden.
+# compiler-rt builtins, which the libraries need and the sysroot does not provide: the outline
+# atomics helpers (lse.S, assembled once per operation, size and memory order), the flag they test
+# (outline-atomics-init.c, written for Darling) and __isPlatformVersionAtLeast & co.
+# (os_version_check.c), which clang calls for @available checks. All hidden, so each library
+# carries its own copy and exports none of them.
 #
-# lse.S is used from a patched copy: compiler-rt names the helpers __aarch64_* in assembly, which
-# on Mach-O is the C symbol _aarch64_*, while clang calls ___aarch64_* (C __aarch64_*). Upstream
-# never builds them for Darwin, where outline atomics are not the default.
+# lse.S is used from a patched copy: it names the helpers __aarch64_* in assembly, which on Mach-O
+# is the C symbol _aarch64_* (C names get a leading underscore there), while clang's calls to the C
+# function __aarch64_* reference ___aarch64_*.
 bt=$WORK/builtins
 rm -rf "$bt"
 mkdir -p "$bt/obj"
@@ -142,21 +158,23 @@ clang $cflags -mcpu=apple-a7 -moutline-atomics -O2 -fvisibility=hidden \
 
 export SWIFT_TOOLCHAIN DARLING_RT_SDK="$sdk" DARLING_RT_BUILTINS="$bt/libdarling_rt_builtins.a"
 install=$WORK/install
+rm -rf "$install"
 common="-G Ninja --toolchain $here/macos-arm64.cmake -DCMAKE_POLICY_DEFAULT_CMP0195=NEW
 	-DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=YES -DCMAKE_INSTALL_PREFIX=$install/usr
 	-DCMAKE_INSTALL_NAME_DIR=/usr/lib/swift -DCMAKE_BUILD_WITH_INSTALL_NAME_DIR=ON"
 
 # Core: libswiftCore, libswift_Concurrency, libswiftSwiftOnoneSupport, libswiftRemoteMirror.
-# Apple's settings (apple-common.cmake) except: crash reporter and os_signpost tracing off (Darling
-# has neither), strict availability off, runtime function counters off (Apple's shipping build
-# exports none). The exported symbol sets then match the pkg's (see README.md).
+# Upstream's Apple settings (Runtimes/Core/cmake/caches/Vendors/Apple/apple-common.cmake) except
+# two. Stdlib tracing is off: upstream's option text says it requires os_log(3) and os_signpost(3),
+# and whether Darling's os_signpost works was not checked. Strict availability is off: upstream's
+# option text says it breaks things when the host OS is older than the runtime's @available
+# annotations.
 rm -rf "$WORK/build-core"
 # shellcheck disable=SC2086
 cmake -S "$swift_src/Runtimes/Core" -B "$WORK/build-core" $common \
 	-C "$swift_src/Runtimes/Core/cmake/caches/Vendors/Apple/apple-common.cmake" \
 	-DSwiftCore_ARCH_SUBDIR=arm64 -DSwiftCore_PLATFORM_SUBDIR=macosx -DSwiftCore_INSTALL_NESTED_SUBDIR=OFF \
 	-DSwiftCore_ENABLE_CONCURRENCY=ON -DSwiftCore_ENABLE_REMOTE_MIRROR=ON -DSwiftCore_ENABLE_BACKTRACING=ON \
-	-DSwiftCore_ENABLE_RUNTIME_FUNCTION_COUNTERS=OFF -DSwiftCore_ENABLE_CRASH_REPORTER_CLIENT=OFF \
 	-DSwiftCore_ENABLE_STDLIB_TRACING=OFF -DSwiftCore_ENABLE_STRICT_AVAILABILITY=OFF \
 	-DSwiftCore_OPTIMIZATION_REMARKS=OFF \
 	-Ddispatch_IMPLIB="$sdk/usr/lib/system/libdispatch.dylib" -Ddispatch_INCLUDE_DIR="$sdk/usr/include" \
@@ -164,7 +182,7 @@ cmake -S "$swift_src/Runtimes/Core" -B "$WORK/build-core" $common \
 ninja -C "$WORK/build-core" -j "$JOBS"
 cmake --install "$WORK/build-core" > /dev/null
 
-# Overlay: libswift_Builtin_float (the C++ interop overlays are not shipped here).
+# Overlay: libswift_Builtin_float (the C++ interop overlays are not built).
 rm -rf "$WORK/build-overlay"
 # shellcheck disable=SC2086
 cmake -S "$swift_src/Runtimes/Overlay" -B "$WORK/build-overlay" $common \
@@ -175,27 +193,29 @@ cmake -S "$swift_src/Runtimes/Overlay" -B "$WORK/build-overlay" $common \
 ninja -C "$WORK/build-overlay" -j "$JOBS"
 cmake --install "$WORK/build-overlay" > /dev/null
 
-# The Darwin overlay's module, which Synchronization imports: from ../overlays/Darwin, as for the
-# shipped libswiftDarwin, against the stdlib just built. Only the module is used; the library
-# Synchronization links is the repository's libswiftDarwin.dylib. Darling's SDK module maps need
-# clang's builtin headers inside the system modules (an SDK older than macOS 14 gets that from
-# swiftc automatically).
+# The Darwin overlay, which the Supplemental libraries import (Synchronization also links it): from
+# ../overlays/Darwin, against the stdlib just built, arm64 only. Its module goes next to the
+# stdlib's, where the Supplemental builds look for modules. It is used here only to compile and
+# link the libraries below; the libswiftDarwin.dylib the repository ships is ../overlays/build.sh's.
+# Darling's SDK module maps need clang's builtin headers inside the system modules (an SDK older
+# than macOS 14 gets that from swiftc automatically).
 modflags="-Xcc -Xclang -Xcc -fbuiltin-headers-in-system-modules -Xcc -Wno-macro-redefined"
 # shellcheck disable=SC2086
-"$SWIFT_TOOLCHAIN/bin/swiftc" -emit-module "$repo"/overlays/Darwin/*.swift \
+"$SWIFT_TOOLCHAIN/bin/swiftc" -emit-library -emit-module "$repo"/overlays/Darwin/*.swift \
 	-target arm64-apple-macosx13.0 -sdk "$sdk" -I "$install/usr/lib/swift" -I "$install/usr/lib/swift/shims" \
 	-module-cache-path "$WORK/module-cache" -swift-version 5 -module-name Darwin -module-link-name swiftDarwin \
-	-enable-library-evolution -parse-as-library -O \
+	-enable-library-evolution -parse-as-library -O -Xcc -mcpu=apple-a7 -Xcc -moutline-atomics \
 	-Xcc -fmodule-map-file="$repo/overlays/shims/overlay-shims.modulemap" $modflags \
-	-emit-module-path "$sdk/usr/lib/swift/Darwin.swiftmodule"
-ln -s "$repo/libswiftDarwin.dylib" "$sdk/usr/lib/swift/libswiftDarwin.dylib"
+	-emit-module-path "$install/usr/lib/swift/Darwin.swiftmodule" \
+	-use-ld="$(command -v ld64.lld)" -L "$install/usr/lib/swift" -L "$install/usr/lib/swift/macosx/arm64" \
+	-Xlinker -platform_version -Xlinker macos -Xlinker 13.0 -Xlinker 15.2 -Xlinker "$DARLING_RT_BUILTINS" \
+	-Xlinker -install_name -Xlinker /usr/lib/swift/libswiftDarwin.dylib \
+	-o "$sdk/usr/lib/swift/libswiftDarwin.dylib"
 
 # Supplemental: each library is a CMake project of its own (the umbrella project's
-# ExternalProject does not pass the toolchain file on). Observation, Distributed,
-# _Differentiation and Runtime are not built: they need os_unfair_lock and tgmath from the
-# Darwin Clang module, which Darling's SDK module maps do not provide, and their pkg slices
-# contain no ARMv8.1+ instructions (README.md).
-for p in StringProcessing Synchronization Volatile; do
+# ExternalProject does not pass the toolchain file on).
+supplemental="StringProcessing Synchronization Volatile Observation Distributed Differentiation"
+for p in $supplemental; do
 	rm -rf "$WORK/build-$p"
 	# shellcheck disable=SC2086
 	cmake -S "$swift_src/Runtimes/Supplemental/$p" -B "$WORK/build-$p" $common \
@@ -206,30 +226,43 @@ for p in StringProcessing Synchronization Volatile; do
 	cmake --install "$WORK/build-$p" > /dev/null
 done
 
-# A resource directory in the pkg's layout, for ../overlays/build.sh (SWIFT_RESOURCE_DIR; it then
+# A Swift resource directory (macosx/, shims/, clang/) for ../overlays/build.sh (SWIFT_RESOURCE_DIR; it then
 # also needs SWIFT_EXTRA_FLAGS="-I $WORK/resource/shims" plus $modflags).
 res=$WORK/resource
 rm -rf "$res"
 mkdir -p "$res/macosx"
 for m in "$install"/usr/lib/swift/*.swiftmodule "$install"/usr/lib/swift/macosx/*.swiftmodule \
 	"$install"/usr/lib/swift/*.dylib "$install"/usr/lib/swift/macosx/arm64/*.dylib \
-	"$sdk/usr/lib/swift/Darwin.swiftmodule" "$sdk/usr/lib/swift/libswiftDarwin.dylib"; do
+	"$sdk/usr/lib/swift/libswiftDarwin.dylib"; do
 	[ -e "$m" ] && ln -s "$m" "$res/macosx/"
 done
 ln -s "$install/usr/lib/swift/shims" "$res/shims"
 ln -s "$SWIFT_TOOLCHAIN/lib/swift/clang" "$res/clang"
 
-# Merge with the repository's x86_64 slices.
+# Every arm64 runtime library the repository ships, as built above, collected into $WORK/arm64.
+# libswiftCompatibilitySpan.dylib is a symlink to libswiftCore.dylib in the repository.
 libs="libswiftCore libswift_Concurrency libswiftSwiftOnoneSupport libswiftRemoteMirror libswift_Builtin_float
-	libswift_StringProcessing libswift_RegexParser libswiftRegexBuilder libswiftSynchronization libswift_Volatile"
+	libswift_StringProcessing libswift_RegexParser libswiftRegexBuilder libswiftSynchronization libswift_Volatile
+	libswiftObservation libswiftDistributed libswift_Differentiation"
+rm -rf "$WORK/arm64"
+mkdir -p "$WORK/arm64"
 for lib in $libs; do
 	new=$install/usr/lib/swift/$lib.dylib
 	[ -f "$new" ] || new=$install/usr/lib/swift/macosx/arm64/$lib.dylib
+	[ -f "$new" ] || { echo "$lib.dylib was not built" >&2; exit 1; }
+	cp "$new" "$WORK/arm64/$lib.dylib"
+done
+
+# The check that matters, on the libraries just built: no instruction an ARMv8.0 core lacks
+# outside the outline atomics helpers.
+python3 "$here/scan-armv8.py" $(for lib in $libs; do echo "$WORK/arm64/$lib.dylib"; done)
+
+# Merge each with the x86_64 slice already in the repository (not rebuilt here).
+# MERGE_X86_64=0 stops after the check, leaving the arm64 libraries in $WORK/arm64.
+[ "${MERGE_X86_64:-1}" != 0 ] || exit 0
+for lib in $libs; do
 	llvm-lipo -thin x86_64 "$repo/$lib.dylib" -output "$WORK/$lib.x86_64"
-	llvm-lipo -create "$WORK/$lib.x86_64" "$new" -output "$repo/$lib.dylib"
+	llvm-lipo -create "$WORK/$lib.x86_64" "$WORK/arm64/$lib.dylib" -output "$repo/$lib.dylib"
 	rm "$WORK/$lib.x86_64"
 	echo "updated $lib.dylib: $(llvm-lipo -archs "$repo/$lib.dylib")"
 done
-
-# The check that matters: no instruction an ARMv8.0 core lacks outside the helpers.
-python3 "$here/scan-armv8.py" $(for lib in $libs; do echo "$repo/$lib.dylib"; done)

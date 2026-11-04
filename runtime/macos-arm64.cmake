@@ -1,20 +1,17 @@
-# Toolchain for runtime/build.sh: Swift's runtime libraries for arm64 macOS,
-# cross-compiled on Linux, for an ARMv8.0 baseline with outline atomics.
+# Toolchain for runtime/build.sh: Swift's runtime libraries for arm64 macOS, cross-compiled on
+# Linux for an ARMv8.0-A baseline with outline atomics.
 #
-# The swift.org pkg's arm64 slices target Apple M1 and contain ARMv8.1 LSE
-# atomics (cas, casp, ldadd...) and ARMv8.3 RCpc loads (ldapr) inline; an
-# ARMv8.0 core (Cortex-A72, Exynos M3) dies on them with SIGILL. Here every
-# compiler gets -mcpu=apple-a7 (ARMv8.0) and -moutline-atomics: atomics call
-# compiler-rt's __aarch64_* helpers, which use LSE when the CPU has it
-# (outline-atomics-init.c) and exclusive loops otherwise. swiftc takes the
-# same flags through -Xcc: its code generator uses the Clang importer's
-# target CPU and features.
+# Every compiler gets -mcpu=apple-a7 (ARMv8.0-A) and -moutline-atomics, so that no code depends
+# on the Armv8.1-A LSE atomics or the RCpc loads that clang's default CPU for arm64-apple-macosx
+# (apple-m1) allows. Atomic operations call compiler-rt's __aarch64_* helpers, which use LSE when
+# the CPU has it (outline-atomics-init.c) and load/store-exclusive loops otherwise. swiftc takes
+# the same flags through -Xcc: its code generator uses the Clang importer's target CPU and
+# features (swift/lib/IRGen/IRGen.cpp).
 #
-# Environment (set by build.sh): SWIFT_TOOLCHAIN (usr/ of a Swift 6.3.3
-# toolchain), DARLING_RT_SDK (a sysroot: SDK headers + Darling's usr/lib),
-# DARLING_RT_BUILTINS (libdarling_rt_builtins.a: the outline atomics
-# helpers and __isPlatformVersionAtLeast, which Apple links into each library
-# from libclang_rt.osx.a).
+# Environment (set by build.sh): SWIFT_TOOLCHAIN (usr/ of a Swift 6.3.3 toolchain),
+# DARLING_RT_SDK (a sysroot: SDK headers + Darling's usr/lib), DARLING_RT_BUILTINS
+# (libdarling_rt_builtins.a: the outline atomics helpers and __isPlatformVersionAtLeast, linked
+# hidden into each library).
 set(CMAKE_SYSTEM_NAME Darwin)
 set(CMAKE_SYSTEM_PROCESSOR arm64)
 set(CMAKE_OSX_ARCHITECTURES arm64 CACHE STRING "")
