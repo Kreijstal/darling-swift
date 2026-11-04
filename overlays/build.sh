@@ -112,15 +112,25 @@ merge_x86_64() {
 # load an arm64 app that links them. The frameworks behind them are stubs in Darling, so the 5.2.2
 # sources cannot be built against Darling's SDK. Apps import only the force-load symbol from these,
 # so each is ForceLoad/ForceLoad.swift built under its module name:
-FORCE_LOAD_ONLY_OVERLAYS="AVFoundation Accelerate Compression CoreAudio CoreImage CoreLocation GLKit GameplayKit Intents MapKit Metal MetalKit ModelIO SpriteKit simd"
-# and these two carry the API apps do import, clean-room (see README).
-SDK_OVERLAYS="$FORCE_LOAD_ONLY_OVERLAYS CoreMedia Network"
+FORCE_LOAD_ONLY_OVERLAYS="AVFoundation Accelerate Compression CoreImage CoreLocation GLKit GameplayKit Intents MapKit Metal MetalKit ModelIO SpriteKit simd"
+# and these two carry the API apps do import, clean-room (see README). Network, the third, imports
+# Foundation and Dispatch, so it is built after them (build_network).
+SDK_OVERLAYS="$FORCE_LOAD_ONLY_OVERLAYS CoreAudio CoreMedia"
 build_sdk_overlays() {
 	for module in $FORCE_LOAD_ONLY_OVERLAYS; do
 		build_module "$module" "$here/ForceLoad/ForceLoad.swift"
 	done
+	build_module CoreAudio "$here/CoreAudio/CoreAudio.swift" -- -Xcc -fmodule-map-file="$here/CoreAudio/shims/module.modulemap" --link -lswiftDarwin
 	build_module CoreMedia "$here/CoreMedia/CoreMedia.swift" -- -Xcc -fmodule-map-file="$here/CoreMedia/shims/module.modulemap"
-	build_module Network "$here/Network/Network.swift" -- -Xcc -fmodule-map-file="$here/Network/shims/module.modulemap" --link -lswiftDarwin
+}
+
+# Network: clean-room, over BSD sockets and Dispatch, with TLS from libnetwork's libtls session
+# (src/external/libnetwork/src/nw/darling_tls.m), so it links the libnetwork built with it.
+# LIBNETWORK points at that build when DARLING_ROOT holds an older one.
+build_network() {
+	libnetwork=${LIBNETWORK:-$DARLING_ROOT/usr/lib/libnetwork.dylib}
+	build_module Network "$here"/Network/*.swift -- -Xcc -fmodule-map-file="$here/Network/shims/module.modulemap" -Xcc -fmodule-map-file="$here/CoreGraphics/shims/module.modulemap" --link "$libnetwork" "$foundation" -lswiftFoundation -lswiftDispatch -lswiftObjectiveC -lswiftDarwin
+	merge_x86_64 Network
 }
 
 build_module Darwin "$here"/Darwin/*.swift
@@ -459,6 +469,7 @@ scenekit="$DARLING_ROOT/System/Library/Frameworks/SceneKit.framework/Versions/A/
 build_module SceneKit "$here/SceneKit/SceneKit.swift" -- -Xcc -fmodule-map-file="$here/SceneKit/shims/module.modulemap" -Xcc -fmodule-map-file="$here/CoreGraphics/shims/module.modulemap" --link "$scenekit" "$foundation" "$corefoundation" -lswiftFoundation -lswiftCoreGraphics -lswiftCoreFoundation -lswiftObjectiveC -lswiftDarwin
 
 build_sdk_overlays
+build_network
 
 # UniformTypeIdentifiers is arm64-only: the x86_64 slice built from ../libswiftUniformTypeIdentifiers.S held
 # placeholder values, so there is nothing to merge with.
