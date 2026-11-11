@@ -48,7 +48,7 @@ extension URLError {
     @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
     public var networkUnavailableReason: URLError.NetworkUnavailableReason? {
         guard let reason = _nsError.userInfo()?["NSURLErrorNetworkUnavailableReasonKey"] as? NSNumber else { return nil }
-        return NetworkUnavailableReason(rawValue: Int(reason.intValue()))
+        return NetworkUnavailableReason(rawValue: Int(reason.int32Value))
     }
 }
 

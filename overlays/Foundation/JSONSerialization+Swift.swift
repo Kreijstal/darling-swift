@@ -101,19 +101,19 @@ internal enum _JSONSerialization {
             }
             switch number.objCType().map({ String(cString: $0) }) ?? "" {
             case "f":
-                let float = number.floatValue()
+                let float = number.floatValue
                 guard float.isFinite else {
                     throw Error.invalidValue("Invalid number value (\(float)) in JSON write.")
                 }
                 appendFloatingPoint(float.description)
             case "d":
-                let double = number.doubleValue()
+                let double = number.doubleValue
                 guard double.isFinite else {
                     throw Error.invalidValue("Invalid number value (\(double)) in JSON write.")
                 }
                 appendFloatingPoint(double.description)
             default:
-                append(String(number.longLongValue()))
+                append(String(number.int64Value))
             }
         }
 

@@ -45,31 +45,31 @@ public struct URLResourceValues {
     }
 
     public var isRegularFile: Bool? {
-        return _number(.isRegularFileKey)?.boolValue()
+        return _number(.isRegularFileKey)?.boolValue
     }
 
     public var isDirectory: Bool? {
-        return _number(.isDirectoryKey)?.boolValue()
+        return _number(.isDirectoryKey)?.boolValue
     }
 
     public var isSymbolicLink: Bool? {
-        return _number(.isSymbolicLinkKey)?.boolValue()
+        return _number(.isSymbolicLinkKey)?.boolValue
     }
 
     public var fileSize: Int? {
-        return _number(.fileSizeKey)?.integerValue()
+        return _number(.fileSizeKey)?.intValue
     }
 
     public var fileAllocatedSize: Int? {
-        return _number(.fileAllocatedSizeKey)?.integerValue()
+        return _number(.fileAllocatedSizeKey)?.intValue
     }
 
     public var totalFileSize: Int? {
-        return _number(.totalFileSizeKey)?.integerValue()
+        return _number(.totalFileSizeKey)?.intValue
     }
 
     public var totalFileAllocatedSize: Int? {
-        return _number(.totalFileAllocatedSizeKey)?.integerValue()
+        return _number(.totalFileAllocatedSizeKey)?.intValue
     }
 
     public var contentAccessDate: Date? {
@@ -81,7 +81,7 @@ public struct URLResourceValues {
     }
 
     public var isUbiquitousItem: Bool? {
-        return _number(.isUbiquitousItemKey)?.boolValue()
+        return _number(.isUbiquitousItemKey)?.boolValue
     }
 }
 
