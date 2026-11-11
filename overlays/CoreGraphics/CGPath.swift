@@ -39,6 +39,18 @@ extension CGMutablePath {
     CGPathAddLineToPoint(self, &transform, point.x, point.y)
   }
 
+  public func addArc(center: CGPoint, radius: CGFloat, startAngle: CGFloat, endAngle: CGFloat,
+                     clockwise: Bool, transform: CGAffineTransform = .identity) {
+    var transform = transform
+    CGPathAddArc(self, &transform, center.x, center.y, radius, startAngle, endAngle, clockwise)
+  }
+
+  public func addArc(tangent1End: CGPoint, tangent2End: CGPoint, radius: CGFloat,
+                     transform: CGAffineTransform = .identity) {
+    var transform = transform
+    CGPathAddArcToPoint(self, &transform, tangent1End.x, tangent1End.y, tangent2End.x, tangent2End.y, radius)
+  }
+
   public func addRect(_ rect: CGRect, transform: CGAffineTransform = .identity) {
     var transform = transform
     CGPathAddRect(self, &transform, rect)
