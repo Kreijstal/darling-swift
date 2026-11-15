@@ -16,7 +16,8 @@ function(add_darling_swift_library name)
     list(LENGTH P_SOURCES swift_count)
     list(LENGTH P_NATIVE_SOURCES native_count)
     if(NOT name STREQUAL "CryptoKit" OR NOT P_FRAMEWORK OR
-            NOT swift_count EQUAL 30 OR NOT native_count EQUAL 3)
+            NOT swift_count EQUAL 30 OR NOT native_count EQUAL 3 OR
+            NOT P_LIBRARIES STREQUAL "crypto44")
         message(FATAL_ERROR "CryptoKit target/source ownership mismatch")
     endif()
     set(target_count 1 PARENT_SCOPE)

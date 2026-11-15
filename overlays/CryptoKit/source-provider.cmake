@@ -95,7 +95,7 @@ add_darling_swift_library(CryptoKit FRAMEWORK
         -D DARLING_CRYPTOKIT_MODULE -D CRYPTO_IN_SWIFTPM_FORCE_BUILD_API
         -enable-experimental-feature Lifetimes
     NATIVE_FLAGS -I${OVERLAYS}/CryptoKit -I${CMAKE_SOURCE_DIR}/src/external/libressl-2.8.3/include
-    LIBRARIES crypto)
+    LIBRARIES crypto44)
 foreach(part BASE AEAD)
     install(FILES "${DARLING_CRYPTOKIT_${part}_SOURCE}/LICENSE.txt" "${DARLING_CRYPTOKIT_${part}_SOURCE}/NOTICE.txt"
         DESTINATION "share/darling/licenses/CryptoKit/${part}")
