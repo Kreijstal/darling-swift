@@ -1,6 +1,8 @@
 # Configure-only source ownership/selection guard; no Swift or crypto execution.
 set(provider "${CMAKE_CURRENT_LIST_DIR}/../source-provider.cmake")
-set(OVERLAYS "${CMAKE_CURRENT_LIST_DIR}/../..")
+if(NOT DEFINED OVERLAYS)
+    set(OVERLAYS "${CMAKE_CURRENT_LIST_DIR}/../..")
+endif()
 set(target_count 0)
 set(removed_count 0)
 function(remove_sdk_framework name)

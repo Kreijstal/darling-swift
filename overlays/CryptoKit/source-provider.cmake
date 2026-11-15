@@ -77,6 +77,12 @@ list(APPEND CRYPTOKIT_SOURCES
     "${OVERLAYS}/CryptoKit/P256.swift"
     "${OVERLAYS}/CryptoKit/HashFunctions_LibreSSL.swift"
 )
+foreach(source IN ITEMS AEAD.swift P256.swift HashFunctions_LibreSSL.swift
+        aead.c aead.h p256.c p256.h digests.c digests.h module.modulemap)
+    if(NOT EXISTS "${OVERLAYS}/CryptoKit/${source}")
+        message(FATAL_ERROR "CryptoKit owned source input is absent")
+    endif()
+endforeach()
 remove_sdk_framework(CryptoKit)
 add_darling_swift_library(CryptoKit FRAMEWORK
     SOURCES ${CRYPTOKIT_SOURCES}
