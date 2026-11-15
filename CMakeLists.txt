@@ -36,6 +36,8 @@ if (SWIFT_TOOLCHAIN_FOUND)
 
 	# OS_OBJECT_SWIFT3 makes the dispatch headers declare the OS_dispatch_source_* protocols, as when Swift imports them.
 	file(GLOB DISPATCH_SOURCES "${OVERLAYS}/Dispatch/*.swift")
+	# The canonical scheduler source already owns DispatchQueue's Scheduler conformance.
+	list(REMOVE_ITEM DISPATCH_SOURCES "${OVERLAYS}/Dispatch/Dispatch+Combine.swift")
 	add_darling_swift_library(Dispatch
 		SOURCES ${DISPATCH_SOURCES}
 		MODULES ObjectiveC Darwin
