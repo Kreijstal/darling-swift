@@ -60,8 +60,9 @@ include("${OVERLAYS}/Network/source-provider.cmake")
 add_darling_swift_library(Network
 	SOURCES ${NETWORK_SOURCES}
 	MODULES Foundation Dispatch CoreFoundation ObjectiveC Darwin
-	FLAGS ${overlay_shims} ${NETWORK_PROVIDER_FLAGS}
-	LIBRARIES Network Security)
+	FLAGS ${overlay_shims} ${NETWORK_PROVIDER_FLAGS} -disable-autolink-framework Network
+	LIBRARIES libnetwork Security)
+darling_register_network_swift_reexport()
 
 # Source-built CryptoKit is enabled only with both exact pinned source roots.
 include("${OVERLAYS}/CryptoKit/source-provider.cmake")
