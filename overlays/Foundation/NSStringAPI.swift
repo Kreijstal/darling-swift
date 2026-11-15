@@ -647,10 +647,7 @@ extension String {
   }
 
   /// Creates a string by reading the file at `path`, using the given encoding.
-  public init(contentsOfFile path: __shared String, encoding enc: Encoding) throws {
-    let ns = try NSString(contentsOfFile: path, encoding: enc.rawValue)
-    self = String._unconditionallyBridgeFromObjectiveC(ns)
-  }
+
 
   /// Creates a string by reading the file at `path`, detecting the encoding.
   public init(contentsOfFile path: __shared String, usedEncoding: inout Encoding) throws {
@@ -667,10 +664,7 @@ extension String {
   }
 
   /// Creates a string by reading the contents of a URL, using the given encoding.
-  public init(contentsOf url: __shared URL, encoding enc: Encoding) throws {
-    let ns = try NSString(contentsOf: url, encoding: enc.rawValue)
-    self = String._unconditionallyBridgeFromObjectiveC(ns)
-  }
+
 
   /// Creates a string by reading the contents of a URL, detecting the encoding.
   public init(contentsOf url: __shared URL, usedEncoding: inout Encoding) throws {
@@ -687,15 +681,7 @@ extension String {
   }
 
   /// The encodings that NSString supports.
-  public static var availableStringEncodings: [Encoding] {
-    var result = [Encoding]()
-    guard var p = NSString.availableStringEncodings() else { return result }
-    while p.pointee != 0 {
-      result.append(Encoding(rawValue: p.pointee))
-      p += 1
-    }
-    return result
-  }
+
 
   /// The default C string encoding.
   public static var defaultCStringEncoding: Encoding {

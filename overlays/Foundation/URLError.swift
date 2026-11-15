@@ -217,7 +217,7 @@ extension URLError {
 extension URLError {
   /// Reasons used by URLError to indicate that a URLSessionTask failed because of unsatisfiable network constraints.
   @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
-  public enum NetworkUnavailableReason : Int {
+  public enum NetworkUnavailableReason : Int, Sendable {
     case cellular
     case expensive
     case constrained

@@ -19,7 +19,7 @@ import Combine
 @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
 extension RunLoop: Scheduler {
     /// The scheduler time type used by the run loop.
-    public struct SchedulerTimeType: Strideable, Codable, Hashable {
+    public struct SchedulerTimeType: Strideable, Codable, Hashable, Sendable {
         /// The date represented by this type.
         public var date: Date
         
@@ -47,7 +47,7 @@ extension RunLoop: Scheduler {
         }
         
         /// The interval by which run loop times advance.
-        public struct Stride: ExpressibleByFloatLiteral, Comparable, SignedNumeric, Codable, SchedulerTimeIntervalConvertible {
+        public struct Stride: ExpressibleByFloatLiteral, Comparable, SignedNumeric, Codable, SchedulerTimeIntervalConvertible, Sendable {
             public typealias FloatLiteralType = TimeInterval
             public typealias IntegerLiteralType = TimeInterval
             public typealias Magnitude = TimeInterval
@@ -142,7 +142,7 @@ extension RunLoop: Scheduler {
     }
     
     /// Options that affect the operation of the run loop scheduler.
-    public struct SchedulerOptions { }
+    public struct SchedulerOptions: Sendable { }
 
     public func schedule(options: SchedulerOptions?,
                          _ action: @escaping () -> Void) {

@@ -37,76 +37,16 @@ extension URLSession {
 
 // MARK: - URLError
 
-extension URLError {
-    @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
-    public enum NetworkUnavailableReason: Int, Sendable {
-        case cellular = 0
-        case expensive = 1
-        case constrained = 2
-    }
 
-    @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
-    public var networkUnavailableReason: URLError.NetworkUnavailableReason? {
-        guard let reason = _nsError.userInfo()?["NSURLErrorNetworkUnavailableReasonKey"] as? NSNumber else { return nil }
-        return NetworkUnavailableReason(rawValue: Int(reason.int32Value))
-    }
-}
 
 // MARK: - URLRequest
 
-extension URLRequest {
-    /// Darling's NSURLRequest has no constrained-network ("Low Data Mode") flag: always allowed.
-    @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
-    public var allowsConstrainedNetworkAccess: Bool {
-        get { true }
-        set {}
-    }
-}
+
 
 // MARK: - NSDictionary and NSArray
 
-extension NSDictionary: Sequence {
-    @_objcRuntimeName(_TtCE10FoundationCSo12NSDictionary9_Iterator)
-    final public class Iterator: IteratorProtocol {
-        private let dictionary: NSDictionary
-        private let keys: NSEnumerator
 
-        fileprivate init(_ dictionary: NSDictionary) {
-            self.dictionary = dictionary
-            keys = dictionary.keyEnumerator()
-        }
 
-        final public func next() -> (key: Any, value: Any)? {
-            guard let key = keys.nextObject(), let value = dictionary.object(forKey: key) else { return nil }
-            return (key: key, value: value)
-        }
 
-        public typealias Element = (key: Any, value: Any)
-    }
-
-    public func makeIterator() -> NSDictionary.Iterator { Iterator(self) }
-}
-
-extension NSArray: ExpressibleByArrayLiteral {
-    required public convenience init(arrayLiteral elements: Any...) {
-        self.init(array: elements)
-    }
-}
 
 // MARK: - String
-
-extension String {
-    public init?<S>(bytes: __shared S, encoding: String.Encoding) where S: Sequence, S.Element == UInt8 {
-        let bytes = Array(bytes)
-        guard let string = bytes.withUnsafeBufferPointer({ buffer in
-            NSString(bytes: UnsafeRawPointer(buffer.baseAddress) ?? UnsafeRawPointer(bitPattern: 1)!, length: buffer.count, encoding: encoding.rawValue)
-        }) else { return nil }
-        self = string as String
-    }
-}
-
-extension StringProtocol {
-    public func folding(options: String.CompareOptions = [], locale: Locale?) -> String {
-        NSString(string: String(self)).folding(options: options, locale: locale)
-    }
-}

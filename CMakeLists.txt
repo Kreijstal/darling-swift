@@ -100,6 +100,8 @@ if (SWIFT_TOOLCHAIN_FOUND)
 	set(cmark_includes_1 "${SWIFT_CMARK_SOURCE_DIR}/extensions/include")
 
 	file(GLOB FOUNDATION_SOURCES "${OVERLAYS}/Foundation/*.swift")
+	# Canonical publisher/scheduler sources own the public Combine interfaces.
+	list(REMOVE_ITEM FOUNDATION_SOURCES "${OVERLAYS}/Foundation/Combine+Foundation.swift")
 	add_darling_swift_library(Foundation
 		SOURCES ${FOUNDATION_SOURCES} ${FOUNDATION_UPSTREAM_SOURCES}
 		MODULES _RopeModule InternalCollectionsUtilities CoreGraphics os XPC CoreFoundation Dispatch ObjectiveC Darwin
