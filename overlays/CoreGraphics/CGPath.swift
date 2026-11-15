@@ -4,7 +4,7 @@
 // Apple Inc. and the Swift project authors, Apache License v2.0 with Runtime Library Exception).
 // Apple's call refined C names (__clip, __moveTo, …) from the SDK's apinotes; Darling has none, so
 // these call the C functions themselves.
-import _DarlingCoreGraphicsShims
+import CoreGraphics
 
 public enum CGPathFillRule: Int {
   /// Nonzero winding number fill rule.
@@ -67,8 +67,7 @@ extension CGPath {
                    transform: CGAffineTransform = .identity) -> CGPath {
     var transform = transform
     let path: CGPath? = lengths.withUnsafeBufferPointer { (buffer: UnsafeBufferPointer<CGFloat>) -> CGPath? in
-      // Darling's declaration has no CF_RETURNS_RETAINED, so Swift sees the +1 result as Unmanaged.
-      CGPathCreateCopyByDashingPath(self, &transform, phase, buffer.baseAddress, buffer.count)?.takeRetainedValue()
+      CGPathCreateCopyByDashingPath(self, &transform, phase, buffer.baseAddress, buffer.count)
     }
     return path!
   }
