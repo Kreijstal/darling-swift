@@ -62,3 +62,6 @@ add_darling_swift_library(Network
 	MODULES Foundation Dispatch CoreFoundation ObjectiveC Darwin
 	FLAGS ${overlay_shims} ${NETWORK_PROVIDER_FLAGS}
 	LIBRARIES Network Security)
+
+# Source-built CryptoKit is enabled only with both exact pinned source roots.
+include("${OVERLAYS}/CryptoKit/source-provider.cmake")
