@@ -41,7 +41,7 @@ if (SWIFT_TOOLCHAIN_FOUND)
 		MODULES ObjectiveC Darwin
 		WEAK_MODULES Combine
 		FLAGS ${overlay_shims}
-		NATIVE_SOURCES "${OVERLAYS}/Dispatch/Dispatch.mm"
+		NATIVE_SOURCES "${OVERLAYS}/Dispatch/Dispatch.mm" "${OVERLAYS}/Dispatch/DarlingSerialExecutor.mm"
 		NATIVE_FLAGS -std=c++17 -fobjc-arc -DOS_OBJECT_SWIFT3=1 -I${OVERLAYS}/Dispatch/include)
 
 	add_darling_swift_library(os
@@ -61,6 +61,7 @@ if (SWIFT_TOOLCHAIN_FOUND)
 		SOURCES ${COREGRAPHICS_SOURCES}
 		MODULES CoreFoundation ObjectiveC Darwin
 		FLAGS ${overlay_shims}
+			-Xcc -fmodule-map-file=${OVERLAYS}/CoreGraphics/shims/module.modulemap
 		LIBRARIES CoreGraphics)
 	reexport(swiftCoreGraphics swiftCoreFoundation "${CMAKE_CURRENT_BINARY_DIR}/libswiftCoreFoundation.dylib")
 
@@ -153,6 +154,22 @@ if (SWIFT_TOOLCHAIN_FOUND)
 	endforeach()
 endif()
 
+# libswiftCoreCompat.dylib: the compatibility symbols (swift_compat.S) that binaries built with newer toolchains
+# link against and that no other library here defines.
+set(DYLIB_INSTALL_NAME "/usr/lib/swift/libswiftCoreCompat.dylib")
+add_darling_library(swiftCoreCompat SHARED
+	swift_compat.S
+)
+target_link_libraries(swiftCoreCompat system)
+set_target_properties(swiftCoreCompat PROPERTIES
+	LINKER_LANGUAGE C
+	OUTPUT_NAME "swiftCoreCompat"
+)
+set_property(TARGET swiftCoreCompat APPEND_STRING PROPERTY
+	LINK_FLAGS " -Wl,-U,_swift_getTypeByMangledNameInContext -Wl,-U,'_\$ss12_ArrayBufferV19_getElementSlowPathyyXlSiF'"
+)
+install(TARGETS swiftCoreCompat DESTINATION libexec/darling/usr/lib/swift)
+
 set(DYLIB_INSTALL_NAME "/usr/lib/swift/libswiftWebKit.dylib")
 add_darling_library(swiftWebKit SHARED
 	libswiftWebKit.S
@@ -165,3 +182,19 @@ set_target_properties(swiftWebKit PROPERTIES
 install(TARGETS swiftWebKit DESTINATION libexec/darling/usr/lib/swift)
 
 include(prebuilt_install.cmake)
+
+# CryptoKit is an arm64-only framework (overlays/CryptoKit, built by overlays/CryptoKit/build.sh: AEAD, P-256 and the
+# hash functions over LibreSSL); nothing else in this directory builds it.
+include(InstallSymlink)
+if (TARGET_ARM64)
+	set(CRYPTOKIT_FRAMEWORK_DIR "libexec/darling/System/Library/Frameworks/CryptoKit.framework")
+	set(DARLING_CRYPTOKIT_BINARY "${CMAKE_CURRENT_SOURCE_DIR}/CryptoKit.framework/Versions/A/CryptoKit"
+		CACHE FILEPATH "Source-built arm64 CryptoKit framework executable")
+	if(NOT EXISTS "${DARLING_CRYPTOKIT_BINARY}")
+		message(FATAL_ERROR "CryptoKit executable does not exist: ${DARLING_CRYPTOKIT_BINARY}")
+	endif()
+	install(PROGRAMS "${DARLING_CRYPTOKIT_BINARY}"
+		DESTINATION "${CRYPTOKIT_FRAMEWORK_DIR}/Versions/A")
+	InstallSymlink(A "${CMAKE_INSTALL_PREFIX}/${CRYPTOKIT_FRAMEWORK_DIR}/Versions/Current")
+	InstallSymlink(Versions/Current/CryptoKit "${CMAKE_INSTALL_PREFIX}/${CRYPTOKIT_FRAMEWORK_DIR}/CryptoKit")
+endif()

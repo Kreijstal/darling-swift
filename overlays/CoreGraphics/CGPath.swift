@@ -1,5 +1,6 @@
 // CGPathFillRule and the CGPath, CGMutablePath and CGContext methods that take it or a transform
-// (CGContext.draw(_:in:byTiling:) is in CoreGraphics.swift),
+// (CGContext.draw(_:in:byTiling:) and the CGMutablePath move, line, curve, rect, ellipse and path methods
+// with a default transform are in CoreGraphics.swift),
 // after release/5.2 stdlib/public/Darwin/CoreGraphics/CoreGraphics.swift (Copyright (c) 2014 - 2017
 // Apple Inc. and the Swift project authors, Apache License v2.0 with Runtime Library Exception).
 // Apple's call refined C names (__clip, __moveTo, …) from the SDK's apinotes; Darling has none, so
@@ -23,22 +24,6 @@ extension CGContext {
 }
 
 extension CGMutablePath {
-  public func addRoundedRect(in rect: CGRect, cornerWidth: CGFloat, cornerHeight: CGFloat,
-                             transform: CGAffineTransform = .identity) {
-    var transform = transform
-    CGPathAddRoundedRect(self, &transform, rect, cornerWidth, cornerHeight)
-  }
-
-  public func move(to point: CGPoint, transform: CGAffineTransform = .identity) {
-    var transform = transform
-    CGPathMoveToPoint(self, &transform, point.x, point.y)
-  }
-
-  public func addLine(to point: CGPoint, transform: CGAffineTransform = .identity) {
-    var transform = transform
-    CGPathAddLineToPoint(self, &transform, point.x, point.y)
-  }
-
   public func addArc(center: CGPoint, radius: CGFloat, startAngle: CGFloat, endAngle: CGFloat,
                      clockwise: Bool, transform: CGAffineTransform = .identity) {
     var transform = transform
@@ -49,16 +34,6 @@ extension CGMutablePath {
                      transform: CGAffineTransform = .identity) {
     var transform = transform
     CGPathAddArcToPoint(self, &transform, tangent1End.x, tangent1End.y, tangent2End.x, tangent2End.y, radius)
-  }
-
-  public func addRect(_ rect: CGRect, transform: CGAffineTransform = .identity) {
-    var transform = transform
-    CGPathAddRect(self, &transform, rect)
-  }
-
-  public func addPath(_ path: CGPath, transform: CGAffineTransform = .identity) {
-    var transform = transform
-    CGPathAddPath(self, &transform, path)
   }
 }
 

@@ -124,12 +124,13 @@ build_sdk_overlays() {
 	build_module CoreMedia "$here/CoreMedia/CoreMedia.swift" -- -Xcc -fmodule-map-file="$here/CoreMedia/shims/module.modulemap"
 }
 
-# Network: clean-room, over BSD sockets and Dispatch, with TLS from libnetwork's libtls session
+# Network: clean-room (Network/Sockets, not the Network/NW*.swift overlay over the nw_* API that the CMake build
+# can use), over BSD sockets and Dispatch, with TLS from libnetwork's libtls session
 # (src/external/libnetwork/src/nw/darling_tls.m), so it links the libnetwork built with it.
 # LIBNETWORK points at that build when DARLING_ROOT holds an older one.
 build_network() {
 	libnetwork=${LIBNETWORK:-$DARLING_ROOT/usr/lib/libnetwork.dylib}
-	build_module Network "$here"/Network/*.swift -- -Xcc -fmodule-map-file="$here/Network/shims/module.modulemap" -Xcc -fmodule-map-file="$here/CoreGraphics/shims/module.modulemap" --link "$libnetwork" "$foundation" -lswiftFoundation -lswiftDispatch -lswiftObjectiveC -lswiftDarwin
+	build_module Network "$here"/Network/Sockets/*.swift -- -Xcc -fmodule-map-file="$here/Network/Sockets/shims/module.modulemap" -Xcc -fmodule-map-file="$here/CoreGraphics/shims/module.modulemap" --link "$libnetwork" "$foundation" -lswiftFoundation -lswiftDispatch -lswiftObjectiveC -lswiftDarwin
 	merge_x86_64 Network
 }
 
@@ -184,6 +185,7 @@ for p in "$here"/Combine/patches/*.patch; do
 done
 # Darling's additions: the parts of Apple's Combine OpenCombine lacks (see Combine/Darling).
 cp "$here"/Combine/Darling/*.swift "$out/combine-src/"
+cp "$here"/Combine/Sources/*.swift "$out/combine-src/"
 
 "$SWIFT_TOOLCHAIN/bin/clang" -target arm64-apple-macosx26.0 $ARM64_C_CPU -isysroot "$DARLING_SDK" \
 	-I "$opencombine_src/Sources/COpenCombineHelpers/include" -Wall -Wextra -O2 -fvisibility=hidden \
@@ -216,8 +218,8 @@ echo "updated Combine.framework: $(llvm-lipo -archs "$repo/Combine.framework/Ver
 "$SWIFT_TOOLCHAIN/bin/clang++" -target arm64-apple-macosx26.0 $ARM64_C_CPU -isysroot "$DARLING_SDK" -I "$here/Dispatch/include" \
 	-std=c++17 -fobjc-arc -O2 -c "$here/Dispatch/Dispatch.mm" -o "$out/obj/Dispatch.mm.o"
 "$SWIFT_TOOLCHAIN/bin/clang" -target arm64-apple-macosx26.0 $ARM64_C_CPU -isysroot "$DARLING_SDK" -fobjc-arc -O2 \
-	-c "$here/Dispatch/DarlingSerialExecutor.m" -o "$out/obj/DarlingSerialExecutor.m.o"
-build_module Dispatch "$here"/Dispatch/*.swift --link "$out/obj/Dispatch.mm.o" "$out/obj/DarlingSerialExecutor.m.o" "$repo/Combine.framework/Versions/A/Combine" -lswiftObjectiveC -lswiftDarwin
+	-c "$here/Dispatch/DarlingSerialExecutor.mm" -o "$out/obj/DarlingSerialExecutor.mm.o"
+build_module Dispatch "$here"/Dispatch/*.swift --link "$out/obj/Dispatch.mm.o" "$out/obj/DarlingSerialExecutor.mm.o" "$repo/Combine.framework/Versions/A/Combine" -lswiftObjectiveC -lswiftDarwin
 build_module os "$here/os/os.swift" -- -Xcc -fmodule-map-file="$here/os/shims/module.modulemap" --link -lswiftDarwin -lswiftObjectiveC -lswiftDispatch
 build_module XPC "$here/XPC/XPC.swift" -- -Xcc -fmodule-map-file="$here/XPC/shims/module.modulemap" --link -lswiftDarwin -lswiftObjectiveC -lswiftDispatch
 

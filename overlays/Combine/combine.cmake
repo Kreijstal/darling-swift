@@ -31,9 +31,10 @@ list(SORT combine_orig)
 file(GLOB combine_patches CONFIGURE_DEPENDS "${COMBINE_PATCH_DIR}/*.patch")
 list(SORT combine_patches)
 
-# Sources that are not in the pinned OpenCombine commit (overlays/Combine/Sources, compiled into the framework as they
+# Sources that are not in the pinned OpenCombine commit (overlays/Combine/Sources and overlays/Combine/Darling, compiled into the framework as they
 # are; they get no patches).
-file(GLOB COMBINE_EXTRA_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/overlays/Combine/Sources/*.swift")
+file(GLOB COMBINE_EXTRA_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/overlays/Combine/Sources/*.swift"
+	"${CMAKE_CURRENT_SOURCE_DIR}/overlays/Combine/Darling/*.swift")
 list(SORT COMBINE_EXTRA_SOURCES)
 
 set(COMBINE_SOURCES)

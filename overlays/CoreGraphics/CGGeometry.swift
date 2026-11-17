@@ -318,8 +318,8 @@ extension CGSize : Codable {
 // swift release/5.4 stdlib/public/Darwin/CoreGraphics/CoreGraphics.swift (Copyright (c) 2014 - 2017 Apple Inc.
 // and the Swift project authors, Apache License v2.0 with Runtime Library Exception), unchanged in content:
 // CGPoint Codable at line 289 (a point is [x, y]) and CGRect Codable at line 501 (a rect is [origin, size]).
-// Only the Codable forms are here; CGPathFillRule, clip(using:), fillPath(using:) and debugDescription
-// are not provided yet.
+// Only the Codable forms are from there; CGPathFillRule and clip(using:) are in CGPath.swift, and
+// debugDescription is below.
 extension CGPoint : Codable {
     public init(from decoder: Decoder) throws {
         var container = try decoder.unkeyedContainer()
@@ -347,5 +347,11 @@ extension CGRect : Codable {
         var container = encoder.unkeyedContainer()
         try container.encode(origin)
         try container.encode(size)
+    }
+}
+
+extension CGRect : CustomDebugStringConvertible {
+    public var debugDescription: String {
+        return "(\(origin.x), \(origin.y), \(size.width), \(size.height))"
     }
 }
