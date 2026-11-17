@@ -13,8 +13,7 @@
 // TimeZone, from release/5.4 stdlib/public/Darwin/Foundation/TimeZone.swift.
 // Darling: NSTimeZone accessors import as methods, the class factories as `Any!` (so results are cast), and the
 // private __NSTimeZoneCurrent/__NSTimeZoneAutoupdating shims are replaced by +defaultTimeZone/+localTimeZone.
-// Darling's +localTimeZone crashes when TZ is unset and returns nil for a TZ it can't resolve, so
-// `autoupdatingCurrent` falls back to +defaultTimeZone, and bridging compares with the +localTimeZone reference it
+// Darling's +localTimeZone crashes when TZ is unset, so bridging compares with the reference `autoupdatingCurrent`
 // recorded when first used (a +localTimeZone instance obtained from ObjC before then bridges as a fixed time zone).
 
 @_exported import Foundation // Clang module
@@ -48,16 +47,14 @@ public struct TimeZone : Hashable, Equatable, ReferenceConvertible {
     ///
     /// The autoupdating time zone only compares equal to itself.
     public static var autoupdatingCurrent : TimeZone {
-        // Bridged before locking, since bridging an NSTimeZone takes _autoupdatingLock. Darling's +localTimeZone
-        // crashes when TZ is unset and caches nil when CFTimeZone can't resolve TZ, so +defaultTimeZone is the fallback.
-        let local = getenv("TZ") != nil ? NSTimeZone.local().map { $0 as NSTimeZone } : nil
-        let fallback = NSTimeZone.default() as NSTimeZone
+        // Bridged before locking, since bridging an NSTimeZone takes _autoupdatingLock.
+        let local = NSTimeZone.local().map { $0 as NSTimeZone }
         _autoupdatingLock.lock()
         defer { _autoupdatingLock.unlock() }
-        if _autoupdatingReference == nil, let local = local {
+        if _autoupdatingReference == nil {
             _autoupdatingReference = local
         }
-        return TimeZone(adoptingReference: _autoupdatingReference ?? fallback, autoupdating: true)
+        return TimeZone(adoptingReference: _autoupdatingReference!, autoupdating: true)
     }
 
     // MARK: -

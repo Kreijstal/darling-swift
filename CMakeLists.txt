@@ -4,19 +4,154 @@ include(darling_lib)
 
 set(DARLING_LIB_64BIT_ONLY TRUE)
 
-set(DYLIB_INSTALL_NAME "/usr/lib/swift/libswiftCoreCompat.dylib")
-add_darling_library(swiftCoreCompat SHARED
-	swift_compat.S
-)
-target_link_libraries(swiftCoreCompat system)
-set_target_properties(swiftCoreCompat PROPERTIES
-	LINKER_LANGUAGE C
-	OUTPUT_NAME "swiftCoreCompat"
-)
-set_property(TARGET swiftCoreCompat APPEND_STRING PROPERTY
-	LINK_FLAGS " -Wl,-U,_swift_getTypeByMangledNameInContext -Wl,-U,'_\$ss12_ArrayBufferV19_getElementSlowPathyyXlSiF'"
-)
-install(TARGETS swiftCoreCompat DESTINATION libexec/darling/usr/lib/swift)
+# The Swift overlays that are built from source need the Swift toolchain (see cmake/swift_toolchain.cmake in the
+# main repository); without one they are skipped.
+set(DARLING_SWIFT_STDLIB_MODULES "${CMAKE_CURRENT_SOURCE_DIR}/stdlib-modules")
+set(DARLING_SWIFT_RUNTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+
+if (SWIFT_TOOLCHAIN_FOUND)
+	set(OVERLAYS "${CMAKE_CURRENT_SOURCE_DIR}/overlays")
+	set(overlay_shims -Xcc -fmodule-map-file=${OVERLAYS}/shims/overlay-shims.modulemap)
+
+	file(GLOB DARWIN_SOURCES "${OVERLAYS}/Darwin/*.swift")
+	add_darling_swift_library(Darwin
+		SOURCES ${DARWIN_SOURCES}
+		FLAGS ${overlay_shims})
+
+	add_darling_swift_library(ObjectiveC
+		SOURCES "${OVERLAYS}/ObjectiveC/ObjectiveC.swift"
+		MODULES Darwin
+		FLAGS ${overlay_shims} -disable-objc-attr-requires-foundation-module)
+
+	file(GLOB COREFOUNDATION_SOURCES "${OVERLAYS}/CoreFoundation/*.swift")
+	add_darling_swift_library(CoreFoundation
+		SOURCES ${COREFOUNDATION_SOURCES}
+		MODULES Darwin
+		FLAGS ${overlay_shims}
+		LIBRARIES CoreFoundation)
+
+	# Combine.framework, built from OpenCombine. The Dispatch and Foundation overlays import it (DispatchQueue's and the
+	# Foundation schedulers and publishers), as on macOS, and link it weakly.
+	include(overlays/Combine/combine.cmake)
+
+	# OS_OBJECT_SWIFT3 makes the dispatch headers declare the OS_dispatch_source_* protocols, as when Swift imports them.
+	file(GLOB DISPATCH_SOURCES "${OVERLAYS}/Dispatch/*.swift")
+	add_darling_swift_library(Dispatch
+		SOURCES ${DISPATCH_SOURCES}
+		MODULES ObjectiveC Darwin
+		WEAK_MODULES Combine
+		FLAGS ${overlay_shims}
+		NATIVE_SOURCES "${OVERLAYS}/Dispatch/Dispatch.mm"
+		NATIVE_FLAGS -std=c++17 -fobjc-arc -DOS_OBJECT_SWIFT3=1 -I${OVERLAYS}/Dispatch/include)
+
+	add_darling_swift_library(os
+		SOURCES "${OVERLAYS}/os/os.swift"
+		MODULES Dispatch ObjectiveC Darwin
+		FLAGS ${overlay_shims} -Xcc -fmodule-map-file=${OVERLAYS}/os/shims/module.modulemap)
+
+	add_darling_swift_library(XPC
+		SOURCES "${OVERLAYS}/XPC/XPC.swift"
+		MODULES Dispatch ObjectiveC Darwin
+		FLAGS ${overlay_shims} -Xcc -fmodule-map-file=${OVERLAYS}/XPC/shims/module.modulemap)
+
+	# CGFloat and the CoreGraphics Swift API. The module re-exports libswiftCoreFoundation, which defines CGFloat
+	# as the SDK's CoreGraphics does, so binaries that look it up through libswiftCoreGraphics still find it.
+	file(GLOB COREGRAPHICS_SOURCES "${OVERLAYS}/CoreGraphics/*.swift")
+	add_darling_swift_library(CoreGraphics
+		SOURCES ${COREGRAPHICS_SOURCES}
+		MODULES CoreFoundation ObjectiveC Darwin
+		FLAGS ${overlay_shims}
+		LIBRARIES CoreGraphics)
+	reexport(swiftCoreGraphics swiftCoreFoundation "${CMAKE_CURRENT_BINARY_DIR}/libswiftCoreFoundation.dylib")
+
+	# Foundation. AttributedString keeps its text in swift-collections' BigString, so two of that project's modules
+	# (overlays/Collections) are compiled without library evolution and linked into libswiftFoundation.dylib, which
+	# keeps their symbols out of its export table.
+	file(GLOB_RECURSE ROPE_SOURCES "${OVERLAYS}/Collections/RopeModule/*.swift")
+	file(GLOB_RECURSE COLLECTIONS_UTILITIES_SOURCES "${OVERLAYS}/Collections/InternalCollectionsUtilities/*.swift")
+	add_darling_swift_object(InternalCollectionsUtilities SOURCES ${COLLECTIONS_UTILITIES_SOURCES})
+	add_darling_swift_object(_RopeModule SOURCES ${ROPE_SOURCES} MODULES InternalCollectionsUtilities)
+	file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/foundation-unexported.txt"
+		"_$s*11_RopeModule*\n_$s*28InternalCollectionsUtilities*\n")
+	# The rest of Foundation's Swift API (AttributedString, the format styles and parse strategies) is
+	# apple/swift-foundation at the tag in swift-foundation-sources.cmake. Its files are compiled from a checkout of
+	# that repository, next to the overlay's own sources in overlays/Foundation, which carry the files that had to
+	# change and the Darling-specific ones (DARLING-CHANGES.md). The Markdown parser is swift-cmark, compiled into the
+	# overlay with hidden visibility so that none of its symbols is exported.
+	set(SWIFT_FOUNDATION_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../swift-foundation" CACHE PATH
+		"Checkout of apple/swift-foundation at the tag swift-6.3.3-RELEASE")
+	set(SWIFT_CMARK_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../swift-cmark" CACHE PATH
+		"Checkout of swiftlang/swift-cmark at the tag swift-6.3.3-RELEASE")
+	foreach(checkout SWIFT_FOUNDATION_SOURCE_DIR SWIFT_CMARK_SOURCE_DIR)
+		if (NOT EXISTS "${${checkout}}/Package.swift")
+			message(FATAL_ERROR "${checkout} (${${checkout}}) is not a checkout: fetch the submodules "
+				"(git submodule update --init) or point ${checkout} at one")
+		endif()
+	endforeach()
+	include(overlays/swift-foundation-sources.cmake)
+	set(FOUNDATION_UPSTREAM_SOURCES)
+	foreach(file IN LISTS SWIFT_FOUNDATION_ESSENTIALS_FILES SWIFT_FOUNDATION_INTERNATIONALIZATION_FILES)
+		list(APPEND FOUNDATION_UPSTREAM_SOURCES "${SWIFT_FOUNDATION_SOURCE_DIR}/Sources/${file}")
+	endforeach()
+	file(GLOB CMARK_SOURCES "${SWIFT_CMARK_SOURCE_DIR}/src/*.c" "${SWIFT_CMARK_SOURCE_DIR}/extensions/*.c")
+	set(cmark_includes_0 "${SWIFT_CMARK_SOURCE_DIR}/src/include")
+	set(cmark_includes_1 "${SWIFT_CMARK_SOURCE_DIR}/extensions/include")
+
+	file(GLOB FOUNDATION_SOURCES "${OVERLAYS}/Foundation/*.swift")
+	add_darling_swift_library(Foundation
+		SOURCES ${FOUNDATION_SOURCES} ${FOUNDATION_UPSTREAM_SOURCES}
+		MODULES _RopeModule InternalCollectionsUtilities CoreGraphics os XPC CoreFoundation Dispatch ObjectiveC Darwin
+		# Combine is linked weakly, as on macOS: a program that never uses its publishers does not need it.
+		WEAK_MODULES Combine
+		FLAGS ${overlay_shims} -package-name swift-foundation
+			-Xcc -DCMARK_GFM_STATIC_DEFINE
+			-Xcc -fmodule-map-file=${cmark_includes_0}/module.modulemap
+			-Xcc -fmodule-map-file=${cmark_includes_1}/module.modulemap
+			-Xcc -I${cmark_includes_0} -Xcc -I${cmark_includes_1}
+		OBJECTS "${_RopeModule_OBJECT}" "${InternalCollectionsUtilities_OBJECT}"
+		NATIVE_SOURCES ${CMARK_SOURCES}
+		NATIVE_FLAGS -fvisibility=hidden -DCMARK_GFM_STATIC_DEFINE -DNDEBUG -I${cmark_includes_0} -I${cmark_includes_1}
+		LINK_FLAGS -Wl,-unexported_symbols_list,${CMAKE_CURRENT_BINARY_DIR}/foundation-unexported.txt
+		LIBRARIES Foundation CoreFoundation icucore)
+	set_property(TARGET swiftFoundation APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/foundation-unexported.txt")
+
+	include(overlays/sdk-frameworks.cmake)
+
+	# GroupActivities.framework: the public API shape of SharePlay's framework, answering as a device that is not
+	# in a FaceTime call (see overlays/README.md).
+	add_darling_swift_library(GroupActivities
+		FRAMEWORK
+		SOURCES "${OVERLAYS}/GroupActivities/Sources/GroupActivities.swift"
+		MODULES Combine Foundation Dispatch CoreFoundation ObjectiveC Darwin
+		FLAGS ${overlay_shims}
+			-Xcc -I${DARLING_TOP_DIRECTORY}/src/frameworks/CoreServices/include
+		LIBRARIES Foundation)
+endif()
+
+# Newer SDKs split parts of the Darwin overlay out of libswiftDarwin.dylib into
+# further dylibs, and binaries built against those SDKs bind the symbols to the
+# split libraries by library ordinal. This tree keeps the whole overlay in
+# libswiftDarwin.dylib, so each split library re-exports it and defines nothing.
+function(add_swift_darwin_reexport name source)
+	set(DYLIB_INSTALL_NAME "/usr/lib/swift/lib${name}.dylib")
+	add_darling_library(${name} SHARED ${source})
+	target_link_libraries(${name} system)
+	set_target_properties(${name} PROPERTIES
+		LINKER_LANGUAGE C
+		OUTPUT_NAME "${name}"
+	)
+	reexport(${name} swiftDarwin "${CMAKE_CURRENT_BINARY_DIR}/libswiftDarwin.dylib")
+	install(TARGETS ${name} DESTINATION libexec/darling/usr/lib/swift)
+endfunction()
+
+if (SWIFT_TOOLCHAIN_FOUND)
+	add_swift_darwin_reexport(swift_errno swift_errno.S)
+	foreach(split
+		swift_DarwinFoundation1 swift_DarwinFoundation2 swift_DarwinFoundation3
+		swift_math swift_signal swift_stdio swift_time swiftsys_time swiftunistd)
+		add_swift_darwin_reexport(${split} swift_darwin_split.S)
+	endforeach()
+endif()
 
 set(DYLIB_INSTALL_NAME "/usr/lib/swift/libswiftWebKit.dylib")
 add_darling_library(swiftWebKit SHARED
@@ -29,48 +164,4 @@ set_target_properties(swiftWebKit PROPERTIES
 )
 install(TARGETS swiftWebKit DESTINATION libexec/darling/usr/lib/swift)
 
-set(DYLIB_INSTALL_NAME "/usr/lib/swift/libswift_errno.dylib")
-add_darling_library(swift_errno SHARED
-	swift_errno.S
-)
-target_link_libraries(swift_errno system)
-set_target_properties(swift_errno PROPERTIES
-	LINKER_LANGUAGE C
-	OUTPUT_NAME "swift_errno"
-)
-set_property(TARGET swift_errno APPEND_STRING PROPERTY
-	LINK_FLAGS " -Wl,-reexport_library,${CMAKE_CURRENT_SOURCE_DIR}/libswiftDarwin.dylib")
-install(TARGETS swift_errno DESTINATION libexec/darling/usr/lib/swift)
-
-file(GLOB DYLIBS "*.dylib")
-if(DYLIBS)
-	install(FILES ${DYLIBS} DESTINATION libexec/darling/usr/lib/swift)
-endif()
-
-# Combine is a universal Swift framework (x86_64 + arm64 built from OpenCombine MIT).
-include(InstallSymlink)
-set(COMBINE_FRAMEWORK_DIR "libexec/darling/System/Library/Frameworks/Combine.framework")
-install(PROGRAMS Combine.framework/Versions/A/Combine
-	DESTINATION "${COMBINE_FRAMEWORK_DIR}/Versions/A")
-InstallSymlink(A "${CMAKE_INSTALL_PREFIX}/${COMBINE_FRAMEWORK_DIR}/Versions/Current")
-InstallSymlink(Versions/Current/Combine "${CMAKE_INSTALL_PREFIX}/${COMBINE_FRAMEWORK_DIR}/Combine")
-
-# Arm64-only frameworks until their x86_64 slices are merged
-if (TARGET_ARM64)
-	set(CRYPTOKIT_FRAMEWORK_DIR "libexec/darling/System/Library/Frameworks/CryptoKit.framework")
-    set(DARLING_CRYPTOKIT_BINARY "${CMAKE_CURRENT_SOURCE_DIR}/CryptoKit.framework/Versions/A/CryptoKit"
-        CACHE FILEPATH "Source-built arm64 CryptoKit framework executable")
-    if(NOT EXISTS "${DARLING_CRYPTOKIT_BINARY}")
-        message(FATAL_ERROR "CryptoKit executable does not exist: ${DARLING_CRYPTOKIT_BINARY}")
-    endif()
-	install(PROGRAMS "${DARLING_CRYPTOKIT_BINARY}"
-		DESTINATION "${CRYPTOKIT_FRAMEWORK_DIR}/Versions/A")
-	InstallSymlink(A "${CMAKE_INSTALL_PREFIX}/${CRYPTOKIT_FRAMEWORK_DIR}/Versions/Current")
-	InstallSymlink(Versions/Current/CryptoKit "${CMAKE_INSTALL_PREFIX}/${CRYPTOKIT_FRAMEWORK_DIR}/CryptoKit")
-
-	set(GROUPACTIVITIES_FRAMEWORK_DIR "libexec/darling/System/Library/Frameworks/GroupActivities.framework")
-	install(PROGRAMS GroupActivities.framework/Versions/A/GroupActivities
-		DESTINATION "${GROUPACTIVITIES_FRAMEWORK_DIR}/Versions/A")
-	InstallSymlink(A "${CMAKE_INSTALL_PREFIX}/${GROUPACTIVITIES_FRAMEWORK_DIR}/Versions/Current")
-	InstallSymlink(Versions/Current/GroupActivities "${CMAKE_INSTALL_PREFIX}/${GROUPACTIVITIES_FRAMEWORK_DIR}/GroupActivities")
-endif()
+include(prebuilt_install.cmake)

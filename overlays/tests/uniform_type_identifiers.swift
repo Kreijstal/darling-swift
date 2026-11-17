@@ -10,7 +10,7 @@ func check(_ ok: Bool, _ what: String) {
 	if !ok { failures += 1 }
 }
 
-// The symbols AppZapper 3000 binds to.
+// UTType.folder and its bridging to the Objective-C type.
 check(UTType.folder.identifier == "public.folder", "UTType.folder is public.folder")
 check(UTType.folder.conforms(to: .directory) && UTType.folder.conforms(to: .item), "folder conforms to directory and item")
 check(!UTType.folder.conforms(to: .data), "folder does not conform to data")
@@ -55,7 +55,11 @@ check(UTTagClass.filenameExtension.rawValue == "public.filename-extension", "fil
 check(UTTagClass.mimeType.rawValue == "public.mime-type", "mimeType tag class")
 
 let exported = UTType(exportedAs: "org.darlinghq.test-document", conformingTo: .json)
-check(exported.identifier == "org.darlinghq.test-document" && exported.conforms(to: .json), "exported type conforms to its parent")
+// Observed on macOS 26.7.3: a type exported by a program without any matching declaration in a bundle keeps its
+// identifier and is not dynamic, but has no declared conformance (the conformingTo argument only takes effect
+// when a bundle declares the type).
+check(exported.identifier == "org.darlinghq.test-document" && !exported.isDynamic && !exported.conforms(to: .json),
+      "undeclared exported type keeps its identifier and has no conformance")
 let imported = UTType(importedAs: "org.darlinghq.test-imported")
 check(imported.identifier == "org.darlinghq.test-imported", "imported type keeps its identifier")
 

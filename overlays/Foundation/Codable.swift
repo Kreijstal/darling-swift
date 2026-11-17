@@ -11,10 +11,10 @@
 //===----------------------------------------------------------------------===//
 
 // From release/5.4 stdlib/public/Darwin/Foundation/Codable.swift.
-// Darling: there is no Combine overlay, so the TopLevelEncoder/TopLevelDecoder conformances are left out, and
-// _typeDescription also describes the JSON box for integers above Int64.max as a number.
+// Darling: _typeDescription also describes the JSON box for integers above Int64.max as a number.
 
 @_exported import Foundation // Clang module
+import Combine
 
 //===----------------------------------------------------------------------===//
 // Errors
@@ -76,9 +76,9 @@ internal let _kCFNumberSInt128Type = CFNumberType(rawValue: 17)!
 
 /// The number's value as `T`, if it is exactly representable.
 internal func _exactly<T : BinaryInteger>(_ number: NSNumber, as type: T.Type) -> T? {
-    switch number.objCType().map({ String(cString: $0) }) ?? "" {
+    switch String(cString: number.objCType) {
     case "f", "d":
-        return T(exactly: number.doubleValue)
+        return T(exactly: number.doubleValue())
     case "Q", "":
         // Darling's __NSCFNumber reports 128-bit integers (UInt64 values above Int64.max) as "Q", or as "" before
         // darling-corefoundation#7; longLongValue would truncate them. JSON integers above Int64.max arrive as
@@ -89,6 +89,22 @@ internal func _exactly<T : BinaryInteger>(_ number: NSNumber, as type: T.Type) -
         guard wide.high == 0 else { return nil }
         return T(exactly: wide.low)
     default:
-        return T(exactly: number.int64Value)
+        return T(exactly: number.longLongValue())
     }
 }
+
+//===----------------------------------------------------------------------===//
+// Combine: the coders as TopLevelEncoder and TopLevelDecoder
+//===----------------------------------------------------------------------===//
+
+@available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
+extension JSONEncoder: TopLevelEncoder { }
+
+@available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
+extension PropertyListEncoder: TopLevelEncoder { }
+
+@available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
+extension JSONDecoder: TopLevelDecoder { }
+
+@available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
+extension PropertyListDecoder: TopLevelDecoder { }

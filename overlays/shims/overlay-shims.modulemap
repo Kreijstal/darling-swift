@@ -4,13 +4,13 @@ module _SwiftObjectiveCOverlayShims {
 module _SwiftDispatchOverlayShims {
   header "DispatchOverlayShims.h"
 }
-module _SwiftOSOverlayShims {
-  header "OSOverlayShims.h"
-}
 module _SwiftXPCOverlayShims {
   header "XPCOverlayShims.h"
 }
 module _FoundationICU [system] {
   header "FoundationICU.h"
   export *
+}
+module _SwiftNetworkOverlayShims {
+  header "NetworkOverlayShims.h"
 }
